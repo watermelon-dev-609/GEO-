@@ -14,6 +14,25 @@ from app.utils.config import get_data_dir
 router = APIRouter()
 
 
+@router.post("/preview")
+async def preview_report(data: dict):
+    """生成报告HTML并返回内嵌内容（非文件下载）"""
+    try:
+        gen = ReportGenerator()
+        report_format = data.get("format", "html")
+        result = gen.generate(
+            evaluation_data=data,
+            output_format=report_format,
+            include_charts=data.get("include_charts", True),
+        )
+        html_path = result["file_path"]
+        with open(html_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return {"html": html_content, "report_id": result["report_id"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"报告预览生成失败: {str(e)}")
+
+
 @router.post("/generate", response_model=ReportResponse)
 async def generate_report(req: ReportRequest):
     """生成评测报表"""

@@ -113,6 +113,7 @@ export function startEvalSSE(data, onEvent, onError) {
 }
 
 // ── 报表 ──
+export const previewReport = (data) => api.post('/reports/preview', data)
 export const generateReport = (data) => api.post('/reports/generate-from-data', data)
 export const exportReport = (id, format) => api.get(`/reports/export/${id}`, { params: { format }, responseType: 'blob' })
 export const listReports = () => api.get('/reports/history')

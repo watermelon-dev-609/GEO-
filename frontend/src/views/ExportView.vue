@@ -45,6 +45,17 @@
             {{ isExporting ? '导出中...' : '一键导出' }}
           </el-button>
 
+          <el-button
+            type="warning"
+            size="default"
+            :icon="View"
+            :disabled="!store.evaluationResult"
+            @click="previewReportInline"
+            style="width: 100%; margin-top: 8px"
+          >
+            预览评测报告
+          </el-button>
+
           <el-divider />
 
           <el-button size="small" @click="exportAllZip" style="width: 100%">
@@ -111,13 +122,30 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 报告预览弹窗 -->
+    <el-dialog
+      v-model="previewDialogVisible"
+      title="评测报告预览"
+      fullscreen
+      :destroy-on-close="true"
+    >
+      <div v-loading="previewLoading" style="height: 100%;">
+        <iframe
+          v-if="previewHtml && !previewLoading"
+          :srcdoc="previewHtml"
+          style="width: 100%; height: calc(100vh - 120px); border: none; border-radius: 8px;"
+          sandbox="allow-same-origin"
+        />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
 import { useGeoStore } from '../stores/geo'
-import { generateJSONLD, generateReport } from '../api'
+import { generateJSONLD, generateReport, previewReport } from '../api'
 import { ElMessage } from 'element-plus'
 
 const store = useGeoStore()
@@ -132,6 +160,10 @@ const showJSONLDPreview = ref(false)
 const showReportPreview = ref(false)
 const jsonldCode = ref('')
 const evalResult = computed(() => store.evaluationResult)
+
+const previewDialogVisible = ref(false)
+const previewHtml = ref('')
+const previewLoading = ref(false)
 
 const sandtableTypes = [
   { value: 'smart_traffic', label: '智慧交通沙盘' },
@@ -220,6 +252,28 @@ async function startExport() {
     ElMessage.error('导出失败')
   } finally {
     isExporting.value = false
+  }
+}
+
+async function previewReportInline() {
+  if (!store.evaluationResult) {
+    ElMessage.warning('暂无可预览的评测数据，请先完成评测')
+    return
+  }
+  previewDialogVisible.value = true
+  previewLoading.value = true
+  try {
+    const res = await previewReport({
+      ...store.evaluationResult,
+      format: 'html',
+      include_charts: true,
+    })
+    previewHtml.value = res.data.html
+  } catch (e) {
+    ElMessage.error('报告预览生成失败')
+    previewDialogVisible.value = false
+  } finally {
+    previewLoading.value = false
   }
 }
 
