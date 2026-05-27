@@ -150,7 +150,7 @@ async function loadConfigForDialog() {
       apiKey: '',
       _saving: false,
     }))
-  } catch { /* ignore */ }
+  } catch (e) { console.error('Config dialog load failed:', e) }
 }
 
 async function saveApiKey(plat) {
@@ -181,15 +181,14 @@ onMounted(async () => {
   try {
     const res = await getLLMConfig()
     store.setLLMConfigs(res.data.llm_platforms || [])
-  } catch { /* ignore */ }
+  } catch (e) { console.error('LayoutShell config init failed:', e) }
 })
 
 async function checkHealth() {
   try {
     const res = await healthCheck()
     ElMessage.success(`服务正常 v${res.data.version}`)
-  } catch {
-    ElMessage.error('后端服务未启动')
+  } catch (e) { console.error('checkHealth failed:', e); ElMessage.error('后端服务未启动')
   }
 }
 
@@ -203,8 +202,7 @@ async function checkConfig() {
     } else {
       ElMessage.success(`已配置 ${configured.length} 个AI平台: ${configured.map(c => c.platform).join(', ')}`)
     }
-  } catch {
-    ElMessage.error('无法获取配置')
+  } catch (e) { console.error('checkConfig failed:', e); ElMessage.error('无法获取配置')
   }
 }
 </script>

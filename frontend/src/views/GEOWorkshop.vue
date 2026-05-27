@@ -247,8 +247,13 @@ const availablePlatforms = [
 ]
 
 onMounted(() => {
-  sourceText.value = store.cleanedText
-  if (store.currentSandtableType) sandtableType.value = store.currentSandtableType
+  // 只在文本为空或来自重优化时自动填充，避免覆盖用户手动编辑
+  if (!sourceText.value || store.reoptimizeContext) {
+    sourceText.value = store.cleanedText
+  }
+  if (store.currentSandtableType && !sandtableType.value) {
+    sandtableType.value = store.currentSandtableType
+  }
 
   // 检测从评测中心传入的重优化上下文
   if (store.reoptimizeContext) {
@@ -282,7 +287,7 @@ async function onTypeChange(val) {
   try {
     const res = await getSandtableProfile(val)
     sandtableProfile.value = res.data
-  } catch { /* ignore */ }
+  } catch (e) { console.error('onTypeChange failed:', e) }
 }
 
 async function startRewrite() {

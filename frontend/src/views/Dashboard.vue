@@ -250,7 +250,7 @@ async function refreshConfig() {
   try {
     const res = await getLLMConfig()
     store.setLLMConfigs(res.data.llm_platforms || [])
-  } catch { /* ignore */ }
+  } catch (e) { console.error('Dashboard config load failed:', e) }
 }
 
 async function loadEvalHistory() {
@@ -258,7 +258,7 @@ async function loadEvalHistory() {
   try {
     const res = await getEvalHistory()
     evalHistory.value = res.data.items || []
-  } catch { /* ignore */ }
+  } catch (e) { console.error('loadEvalHistory failed:', e) }
   finally { evalHistoryLoading.value = false }
 }
 
@@ -282,7 +282,7 @@ onMounted(async () => {
   try {
     const res = await getLLMConfig()
     store.setLLMConfigs(res.data.llm_platforms || [])
-  } catch { /* ignore */ }
+  } catch (e) { console.error('checkConfig failed:', e) }
   loadEvalHistory()
 })
 </script>

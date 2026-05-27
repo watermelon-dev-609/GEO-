@@ -94,7 +94,7 @@ export function startEvalSSE(data, onEvent, onError) {
             try {
               const payload = JSON.parse(line.slice(6))
               onEvent(currentEvent || payload.event, payload)
-            } catch { /* skip bad JSON */ }
+            } catch { /* skip bad JSON, not an error */ }
             currentEvent = ''
           }
         }

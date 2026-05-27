@@ -291,7 +291,13 @@ function previewFile(file) {
 
 function downloadFile(file) {
   if (file.type === 'report' && file.reportId) {
-    window.open(`/api/reports/export/${file.reportId}?format=${file.format || 'html'}`, '_blank')
+    const url = `/api/reports/export/${file.reportId}?format=${file.format || 'html'}`
+    const a = document.createElement('a')
+    a.href = url
+    a.download = file.name || `report.${file.format || 'html'}`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
     return
   }
   // 对于 copy 和 jsonld 类型，重新生成 blob 并触发下载

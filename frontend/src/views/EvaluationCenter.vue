@@ -517,7 +517,7 @@ onMounted(async () => {
       ...d,
       enabled: !(d.requires_llm && !hasLLM.value),
     }))
-  } catch { /* 使用默认 */ }
+  } catch (e) { console.error('Dimension config load failed:', e) }
 
   const firstResult = store.rewriteResults[0]
   evalText.value = firstResult?.optimized_text || store.cleanedText || ''
@@ -667,7 +667,7 @@ async function cancelEval() {
   if (evalSessionId.value) {
     try {
       await apiCancelEval(evalSessionId.value)
-    } catch { /* ignore */ }
+    } catch (e) { console.error('cancelEval API failed:', e) }
   }
   sseConnection.value?.close()
   evalStatus.value = 'cancelled'
@@ -704,9 +704,7 @@ async function loadHistory() {
       _loading: false,
       _detail: null,
     }))
-  } catch {
-    // 静默失败
-  }
+  } catch (e) { console.error('loadHistory failed:', e) }
 }
 
 function toggleHistoryDetail(item) {
@@ -722,9 +720,7 @@ async function loadHistoryDetail(item) {
     const res = await getEvalHistoryDetail(item.session_id)
     item._detail = res.data
     item._loading = false
-  } catch {
-    item._loading = false
-  }
+  } catch (e) { console.error('loadHistoryDetail failed:', e); item._loading = false }
 }
 
 function getDetailDimensions(detail) {
@@ -759,9 +755,7 @@ async function doCompare() {
       session_ids: [selectedForCompare.value[0].session_id, selectedForCompare.value[1].session_id],
     })
     compareData.value = res.data
-  } catch {
-    // ignore
-  } finally {
+  } catch (e) { console.error('doCompare failed:', e) } finally {
     compareLoading.value = false
   }
 }
@@ -777,9 +771,7 @@ async function deleteHistoryItem(item) {
     historyItems.value = historyItems.value.filter(h => h.session_id !== item.session_id)
     selectedForCompare.value = selectedForCompare.value.filter(h => h.session_id !== item.session_id)
     ElMessage.success('已删除')
-  } catch {
-    // 用户取消
-  }
+  } catch { /* user cancelled */ }
 }
 
 function formatDate(dateStr) {
