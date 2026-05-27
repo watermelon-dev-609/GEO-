@@ -28,7 +28,7 @@ class PaginationParams(BaseModel):
 # ── 文本清洗 ──
 
 class CleaningRequest(BaseModel):
-    content: str = Field(..., max_length=50000, description="待清洗的原始文本（最大50000字符）")
+    content: str = Field(..., min_length=1, max_length=50000, description="待清洗的原始文本（最大50000字符）")
     sandtable_type: Optional[SandtableType] = Field(default=None, description="沙盘业务类型（可选，不填则自动识别）")
     extract_dimensions: bool = Field(default=True, description="是否提取五维信息")
 
@@ -94,7 +94,7 @@ class JSONLDResponse(BaseModel):
 # ── AI评测 ──
 
 class EvaluateRequest(BaseModel):
-    optimized_text: str = Field(..., max_length=50000)
+    optimized_text: str = Field(..., min_length=1, max_length=50000)
     original_text: Optional[str] = Field(default=None, max_length=50000)
     sandtable_type: SandtableType = Field(...)
     platforms: list[AIPlatform] = Field(default_factory=list)
@@ -178,7 +178,7 @@ class EvalDimensionConfig(BaseModel):
     enabled: bool = Field(default=True)
 
 class EvalStartRequest(BaseModel):
-    optimized_text: str = Field(..., max_length=50000)
+    optimized_text: str = Field(..., min_length=1, max_length=50000)
     original_text: str | None = Field(default=None, max_length=50000)
     sandtable_type: str = Field(default="smart_traffic")
     platforms: list[str] = Field(default_factory=lambda: ["deepseek"])
