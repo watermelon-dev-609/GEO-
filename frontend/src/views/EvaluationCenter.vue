@@ -197,6 +197,20 @@
             </div>
           </el-card>
 
+          <!-- 信源一致性 / 幻觉风险 -->
+          <el-card shadow="never" style="margin-top: 16px;" v-if="sourceConsistencyScore !== null">
+            <template #header><span>抗AI幻觉 · 信源一致性</span></template>
+            <div class="source-check-result">
+              <el-tag :type="sourceConsistencyScore >= 90 ? 'success' : sourceConsistencyScore >= 70 ? 'warning' : 'danger'" size="large" effect="dark">
+                {{ sourceConsistencyScore >= 90 ? '信源可靠' : sourceConsistencyScore >= 70 ? '存在少量未经证实的信息' : '信源一致性偏低' }}
+              </el-tag>
+              <span style="margin-left: 12px; font-size: 24px; font-weight: bold;" :style="{ color: scoreColor(sourceConsistencyScore) }">{{ sourceConsistencyScore }}分</span>
+              <p style="margin-top: 8px; font-size: 13px; color: #909399;">
+                {{ sourceConsistencyScore >= 90 ? '生成文本与企业官方信源高度一致，AI引用风险低' : sourceConsistencyScore >= 70 ? '部分内容可能偏离企业官方信源，建议核实后重新优化' : '文本中存在较多与信源不一致的信息，AI可能引用到编造的内容，强烈建议重新优化' }}
+              </p>
+            </div>
+          </el-card>
+
           <!-- 前后对比 -->
           <el-card shadow="never" style="margin-top: 16px" v-if="beforeAfter">
             <template #header><span>优化前后对比</span></template>
@@ -415,8 +429,10 @@ const phaseOrderDef = [
   { key: 'brand_recall', label: '品牌召回率', status: 'pending', score: null, result: null },
   { key: 'solution_match', label: '方案匹配度', status: 'pending', score: null, result: null },
   { key: 'advantage_citation', label: '优势采信率', status: 'pending', score: null, result: null },
+  { key: 'real_citation', label: '真实采信率', status: 'pending', score: null, result: null },
   { key: 'structure_quality', label: '结构化程度', status: 'pending', score: null, result: null },
   { key: 'differentiation', label: '差异化程度', status: 'pending', score: null, result: null },
+  { key: 'source_check', label: '信源一致性', status: 'pending', score: null, result: null },
   { key: 'comprehensive', label: '综合评分', status: 'pending', score: null, result: null },
 ]
 
@@ -436,6 +452,9 @@ const weakPoints = computed(() => {
 })
 const suggestions = computed(() => {
   return phaseStates.value['comprehensive']?.result?.suggestions || []
+})
+const sourceConsistencyScore = computed(() => {
+  return phaseStates.value['source_check']?.score ?? null
 })
 const completedDimensions = computed(() => {
   const comp = phaseStates.value['comprehensive']?.result
