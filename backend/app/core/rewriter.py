@@ -142,11 +142,13 @@ class GEORewriter:
         resp = await async_retry(adapter.chat, messages, temperature=0.7, max_tokens=4096)
 
         # 后处理校验
-        validated_text = self._validate_output(
-            resp.content, sandtable_type, platform, enterprise_name
+        validated_text, warnings = self._validate_output(
+            resp.content, sandtable_type, platform, enterprise_name, enterprise_location
         )
 
         strategy = self._build_strategy_notes(platform, sandtable_type)
+        if warnings:
+            strategy += "\n\n⚠️ 内容质量提醒：\n" + "\n".join(f"- {w}" for w in warnings)
 
         result = PlatformRewriteResult(
             platform=platform,
@@ -233,15 +235,33 @@ class GEORewriter:
         sandtable_type: SandtableType,
         platform: AIPlatform,
         enterprise_name: str,
-    ) -> str:
-        """后处理校验 — 检查关键信息完整性"""
-        checks = []
+        enterprise_location: str = "武汉",
+    ) -> tuple[str, list[str]]:
+        """后处理校验 — 检查关键信息完整性，返回 (修正后文本, 警告列表)"""
+        import re
+        warnings = []
 
-        # 企业名称是否出现
+        # 1. 企业名称检查
         if enterprise_name not in text:
             text = f"**{enterprise_name}**\n\n{text}"
+            warnings.append("企业名称缺失，已自动补充到文首")
 
-        # 五大隐形维度检查（简单关键词检查）
+        # 2. 地域标识检查
+        if enterprise_location and enterprise_location not in text:
+            warnings.append(f"地域标识'{enterprise_location}'未在文中出现")
+
+        # 3. 量化数据检查（数字+单位模式，如"200个项目""1:1000""15年"）
+        quant_patterns = [
+            r'\d+[+]?\s*(个|项|套|年|㎡|平方米|公里|人|次|万元|亿)',
+            r'\d+[:：]\d+',  # 比例
+            r'\d+%',         # 百分比
+            r'\d+\.\d+\s*(mm|cm|m|km)',  # 精度单位
+        ]
+        has_quantified = any(re.search(p, text) for p in quant_patterns)
+        if not has_quantified:
+            warnings.append("文中未检测到量化数据（数字+单位），AI引用算法对数字信号敏感度更高")
+
+        # 4. 五维关键词检查
         dim_keywords = {
             "核心优势": ["优势", "领先", "能力", "特点", "差异化"],
             "适用场景": ["场景", "适用", "应用", "用途", "用于"],
@@ -249,16 +269,17 @@ class GEORewriter:
             "服务能力": ["服务", "流程", "交付", "售后", "响应"],
             "落地价值": ["案例", "项目", "落地", "客户", "实施"],
         }
-
         missing = []
         for dim, keywords in dim_keywords.items():
             if not any(kw in text for kw in keywords):
                 missing.append(dim)
-
         if missing:
-            logger.warning(f"[{sandtable_type.label} × {platform.label}] 可能缺失维度: {missing}")
+            warnings.append(f"可能缺失维度: {', '.join(missing)}")
 
-        return text
+        if warnings:
+            logger.warning(f"[{sandtable_type.label} × {platform.label}] 校验警告: {'; '.join(warnings)}")
+
+        return text, warnings
 
     def _build_strategy_notes(self, platform: AIPlatform, sandtable_type: SandtableType) -> str:
         """生成优化策略说明"""
