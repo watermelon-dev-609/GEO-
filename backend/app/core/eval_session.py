@@ -27,6 +27,9 @@ class EvalSession:
         self._event_queue: asyncio.Queue | None = None
         self.sandtable_type: str = sandtable_type
         self.mode: str = mode
+        self.evaluated_text: str = ""
+        self.original_text: str = ""
+        self.platforms: list[str] = []
         self.created_at: str = datetime.now(timezone.utc).isoformat()
 
         for phase in EvalPhase:
@@ -65,6 +68,15 @@ class EvalSession:
         self.status = "completed"
         self.overall_score = overall_score
         self.overall_progress = 100.0
+        self._save_to_disk()
+
+    def _save_to_disk(self):
+        """持久化到磁盘"""
+        try:
+            from app.core.eval_history_store import save_session
+            save_session(self, self.evaluated_text, self.original_text)
+        except Exception as e:
+            logger.warning(f"评测历史保存失败: {e}")
 
     def mark_failed(self):
         self.status = "failed"
@@ -76,6 +88,7 @@ class EvalSession:
             if self.phases[phase]["status"] == EvalPhaseStatus.PENDING.value:
                 self.phases[phase]["status"] = EvalPhaseStatus.CANCELLED.value
         self.overall_progress = 100.0
+        self._save_to_disk()
 
     def _update_progress(self):
         total = len(EvalPhase)
@@ -105,6 +118,7 @@ class EvalSession:
             "overall_score": self.overall_score,
             "sandtable_type": self.sandtable_type,
             "mode": self.mode,
+            "platforms": self.platforms,
             "created_at": self.created_at,
         }
 

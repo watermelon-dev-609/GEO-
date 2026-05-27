@@ -93,6 +93,7 @@ app.include_router(reports.router, prefix="/api/reports", tags=["数据报表"])
 # 确保数据目录存在
 get_data_dir()
 (BACKEND_DIR / "data" / "output").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "evaluations").mkdir(parents=True, exist_ok=True)
 
 
 # ── 启动事件 ──
@@ -113,6 +114,19 @@ async def startup_embedding_check():
             f"错误: {e}。"
             "其他功能（文本清洗、GEO重构、JSON-LD）不受影响。"
         )
+
+
+@app.on_event("startup")
+async def startup_load_history():
+    """启动时加载评测历史"""
+    import logging
+    hist_logger = logging.getLogger(__name__)
+    try:
+        from app.core.eval_history_store import load_all_sessions
+        sessions = load_all_sessions()
+        hist_logger.info(f"已加载 {len(sessions)} 条评测历史记录")
+    except Exception as e:
+        hist_logger.warning(f"评测历史加载失败: {e}")
 
 
 # ── 系统接口 ──
