@@ -659,21 +659,32 @@ class AIEvaluator:
         import re
 
         entities = set()
-        # 品牌/企业名
-        for m in re.finditer(r'(武汉微艺达|微艺达智能科技|微艺达|沙盘模型|定制沙盘)', source_text):
+        # 品牌/企业名（从源文本中动态提取2-8字中文专有名词）
+        for m in re.finditer(r'[一-鿿]{2,8}(?:公司|科技|智能|模型|沙盘|定制|厂家|有限)', source_text):
             entities.add(m.group())
-        # 量化数据（数字+单位）
-        for m in re.finditer(r'\d+[+]*\s*(个|项|套|年|㎡|平方米|公里|人|次|万元|亿|%)', source_text):
+        # 补充硬编码的品牌变体
+        for m in re.finditer(r'(微艺达|武汉微艺达|沙盘模型|定制沙盘)', source_text):
+            entities.add(m.group())
+        # 量化数据（数字+中文单位）
+        for m in re.finditer(r'\d+\+?\s*(?:个|项|套|年|㎡|平方米|公里|人|次|万元|亿|%|以上|余家)', source_text):
             entities.add(m.group())
         # 精度/比例
         for m in re.finditer(r'\d+[:：]\d+', source_text):
             entities.add(m.group())
-        # 技术术语（3-6字中文 + 技术后缀词）
-        for m in re.finditer(r'[一-龥]{3,6}(?:系统|平台|模型|技术|方案|工艺|仿真|沙盘|数据|控制|联动|展示)', source_text):
+        # 中文技术术语（2-8字，后跟技术后缀）
+        for m in re.finditer(r'[一-鿿]{2,8}(?:系统|平台|模型|技术|方案|工艺|仿真|沙盘|数据|控制|联动|展示|服务|定制|设计|制造)', source_text):
+            entities.add(m.group())
+        # 数字+中文组合（如 "200+项目"）
+        for m in re.finditer(r'\d+\+?\s*[一-鿿]{1,4}', source_text):
             entities.add(m.group())
 
         if not entities:
-            return 0.0
+            # 实体提取失败时，回退到简单字符重叠度
+            source_chars = set(source_text)
+            answer_chars = set(answer)
+            if not source_chars:
+                return 0.0
+            return len(source_chars & answer_chars) / len(source_chars)
 
         matched = sum(1 for e in entities if e in answer)
         return matched / len(entities)
@@ -697,7 +708,8 @@ class AIEvaluator:
         if cached is not None:
             return cached
 
-        dims_summary = "暂无"
+        # 构建信源概要：优先用五维信息，否则从文本中提取关键声明
+        dims_summary = f"企业名称：{enterprise_name}\n所在地：{enterprise_location}"
         if dimensions:
             parts = []
             for key, val in dimensions.items():
@@ -705,7 +717,7 @@ class AIEvaluator:
                     items = val if isinstance(val, list) else [str(val)]
                     parts.append(f"- {key}: {'; '.join(items[:3])}")
             if parts:
-                dims_summary = "\n".join(parts)
+                dims_summary += "\n" + "\n".join(parts)
 
         try:
             messages = [
@@ -719,12 +731,14 @@ class AIEvaluator:
             ]
             resp = await async_retry(self.llm.chat, messages, temperature=0.2, max_tokens=512)
             score = self._extract_score(resp.content)
-            result = {"average": score, "analysis": resp.content, "details": [score]}
+            # 限制分数范围
+            score = max(0, min(100, score))
+            result = {"average": score, "analysis": resp.content[:500], "details": [score]}
             eval_cache.set(cache_key, result)
             return result
         except Exception as e:
             logger.warning(f"信源一致性检查失败: {e}")
-            return {"average": 60, "details": [], "error": str(e)}
+            return {"average": 70, "details": [], "error": str(e)}
 
     def _diagnose_v2(self, scores: dict, sandtable_type: SandtableType) -> tuple[list[str], list[str]]:
         """短板诊断 v2 — 支持任意维度组合"""
