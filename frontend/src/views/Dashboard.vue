@@ -55,6 +55,61 @@
       </el-col>
     </el-row>
 
+    <!-- 评测概览 -->
+    <el-row :gutter="20" style="margin-top: 24px;">
+      <el-col :span="12">
+        <el-card shadow="never">
+          <template #header>
+            <div class="card-header">
+              <span>最近评测</span>
+              <el-button size="small" type="primary" link @click="$router.push('/evaluation')">
+                查看全部
+              </el-button>
+            </div>
+          </template>
+          <div v-if="evalHistory.length === 0" class="card-empty">
+            <p>暂无评测数据</p>
+            <el-button size="small" type="primary" @click="$router.push('/evaluation')">开始评测</el-button>
+          </div>
+          <div v-else>
+            <div v-for="item in evalHistory.slice(0, 3)" :key="item.session_id" class="eval-mini-item">
+              <span class="eval-mini-date">{{ formatShortDate(item.created_at) }}</span>
+              <el-tag size="small" type="info">{{ item.sandtable_type || '未知' }}</el-tag>
+              <el-progress
+                :percentage="item.overall_score || 0"
+                :color="item.overall_score >= 80 ? '#67C23A' : item.overall_score >= 60 ? '#E6A23C' : '#F56C6C'"
+                :stroke-width="6"
+                style="flex:1; min-width: 80px;"
+              />
+              <span class="eval-mini-score" :style="{ color: item.overall_score >= 80 ? '#67C23A' : item.overall_score >= 60 ? '#E6A23C' : '#F56C6C' }">
+                {{ item.overall_score ?? '-' }}分
+              </span>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+
+      <el-col :span="12">
+        <el-card shadow="never">
+          <template #header><span>评分概览</span></template>
+          <div v-if="avgEvalScore === null" class="card-empty">
+            <p>暂无评测数据</p>
+          </div>
+          <div v-else class="score-overview">
+            <div class="overview-number">{{ avgEvalScore }}</div>
+            <div class="overview-label">平均分 / 100</div>
+            <div class="overview-trend" :style="{ color: scoreTrendIcon === 'up' ? '#67C23A' : '#F56C6C' }">
+              {{ scoreTrendIcon === 'up' ? '↑ 呈上升趋势' : '↓ 有所下降' }}
+            </div>
+            <div class="overview-count">共 {{ evalHistory.filter(h => h.overall_score != null).length }} 次评测</div>
+            <el-button size="small" type="primary" @click="$router.push('/evaluation')" style="margin-top: 12px;">
+              开始评测
+            </el-button>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <el-card shadow="never" style="margin-top: 24px;" v-if="recentProjects.length > 0">
       <template #header><span>最近项目</span></template>
       <el-table :data="recentProjects" style="width: 100%" size="small">
@@ -70,9 +125,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useGeoStore } from '../stores/geo'
-import { getLLMConfig } from '../api'
+import { getLLMConfig, getEvalHistory } from '../api'
 
 const store = useGeoStore()
+
+const evalHistory = ref([])
+const evalHistoryLoading = ref(false)
 
 const quickActions = [
   { path: '/import', title: '文案导入', desc: '导入、清洗标准化文案', icon: 'DocumentAdd', color: '#409EFF' },
@@ -91,12 +149,46 @@ const activeGuideStep = computed(() => {
   return 1
 })
 
+const avgEvalScore = computed(() => {
+  const scored = evalHistory.value.filter(h => h.overall_score != null)
+  if (scored.length === 0) return null
+  return (scored.reduce((s, h) => s + h.overall_score, 0) / scored.length).toFixed(1)
+})
+const scoreTrendIcon = computed(() => {
+  const scored = evalHistory.value.filter(h => h.overall_score != null)
+  if (scored.length < 2) return null
+  return scored[0].overall_score >= scored[1].overall_score ? 'up' : 'down'
+})
+
 async function refreshConfig() {
   try {
     const res = await getLLMConfig()
     store.setLLMConfigs(res.data.llm_platforms || [])
   } catch { /* ignore */ }
 }
+
+async function loadEvalHistory() {
+  evalHistoryLoading.value = true
+  try {
+    const res = await getEvalHistory()
+    evalHistory.value = res.data.items || []
+  } catch { /* ignore */ }
+  finally { evalHistoryLoading.value = false }
+}
+
+function formatShortDate(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+onMounted(async () => {
+  try {
+    const res = await getLLMConfig()
+    store.setLLMConfigs(res.data.llm_platforms || [])
+  } catch { /* ignore */ }
+  loadEvalHistory()
+})
 </script>
 
 <style scoped>
@@ -115,4 +207,14 @@ async function refreshConfig() {
 .platform-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .platform-item { display: flex; align-items: center; gap: 8px; }
 .plat-status { font-size: 13px; color: #606266; }
+.card-empty { text-align: center; padding: 32px 0; color: #909399; }
+.eval-mini-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f5f5f5; }
+.eval-mini-item:last-child { border-bottom: none; }
+.eval-mini-date { font-size: 12px; color: #909399; min-width: 42px; }
+.eval-mini-score { font-size: 16px; font-weight: bold; min-width: 52px; text-align: right; }
+.score-overview { text-align: center; padding: 16px 0; }
+.overview-number { font-size: 56px; font-weight: bold; color: #409EFF; }
+.overview-label { font-size: 14px; color: #909399; margin-top: 4px; }
+.overview-trend { font-size: 14px; font-weight: bold; margin-top: 8px; }
+.overview-count { font-size: 13px; color: #909399; margin-top: 4px; }
 </style>
