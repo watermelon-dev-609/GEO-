@@ -78,7 +78,7 @@
                   :step="5"
                   size="small"
                   style="width: 120px; margin-left: 12px"
-                  @input="onWeightChange"
+                  @input="onWeightChange(dim)"
                 />
                 <span v-if="dim.enabled" class="dim-weight">{{ dim.weight }}%</span>
               </div>
@@ -553,9 +553,35 @@ function onDimensionChange() {
     d.weight = each + (i === enabled.length - 1 ? remainder : 0)
   })
 }
-function onWeightChange() {
-  // 用户自由调整权重，不做强制均分
-  // 只做视觉反馈：总和不是100时高亮提示
+function onWeightChange(changedDim) {
+  // 自动平衡：调整一个维度时，差额均分给其他维度，保持总和始终为100%
+  const enabled = dimensionConfigs.value.filter(d => d.enabled)
+  if (enabled.length <= 1) {
+    if (enabled.length === 1) enabled[0].weight = 100
+    return
+  }
+
+  const others = enabled.filter(d => d !== changedDim)
+  const currentTotal = enabled.reduce((s, d) => s + d.weight, 0)
+  const target = 100
+
+  if (Math.abs(currentTotal - target) < 0.5) return // 已在容差内
+
+  // 差额由其他维度分摊
+  const delta = target - currentTotal
+  const eachDelta = Math.round(delta / others.length)
+  let remainder = delta - eachDelta * others.length
+
+  others.forEach((d, i) => {
+    const adj = eachDelta + (i < Math.abs(remainder) ? (remainder > 0 ? 1 : -1) : 0)
+    d.weight = Math.max(0, Math.min(100, d.weight + adj))
+  })
+
+  // 微调确保精确100
+  const finalTotal = enabled.reduce((s, d) => s + d.weight, 0)
+  if (finalTotal !== target && others.length > 0) {
+    others[0].weight += (target - finalTotal)
+  }
 }
 const weightSum = computed(() => {
   const enabled = dimensionConfigs.value.filter(d => d.enabled)

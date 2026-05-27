@@ -211,3 +211,16 @@ ModuleNotFoundError("No module named 'faiss.swigfaiss_avx2'")
 2026-05-27 15:24:22 [INFO] app.services.vector_store - 使用 Python I/O 写入 FAISS 索引: C:\Users\Administrator\.geo-optimizer\vectors\evaluation_faiss.index
 2026-05-27 15:24:22 [INFO] app.services.vector_store - 向量存储[evaluation] 已持久化 (记录数: 4)
 2026-05-27 15:24:40 [INFO] app.core.eval_history_store - 评测历史已保存: C:\Users\Administrator\Desktop\GEO生成式搜索优化轻量化技术方案\geo-optimizer\backend\data\evaluations\9d57d8f876d9.json
+2026-05-27 15:37:08 [WARNING] app.core.rewriter - [智慧农业沙盘 × Kimi（长文本处理·深度研报采信优先）] 校验警告: 文中未检测到量化数据（数字+单位），AI引用算法对数字信号敏感度更高
+2026-05-27 15:37:58 [INFO] app.services.vector_store - 向量存储[evaluation] 已添加 3 条记录 (总计: 3)
+2026-05-27 15:37:58 [INFO] app.services.vector_store - 使用 Python I/O 写入 FAISS 索引: C:\Users\Administrator\.geo-optimizer\vectors\evaluation_faiss.index
+2026-05-27 15:37:58 [INFO] app.services.vector_store - 向量存储[evaluation] 已持久化 (记录数: 3)
+2026-05-27 15:39:45 [INFO] app.core.eval_history_store - 评测历史已保存: C:\Users\Administrator\Desktop\GEO生成式搜索优化轻量化技术方案\geo-optimizer\backend\data\evaluations\bf8d071427e2.json
+2026-05-27 15:50:33 [INFO] app.main - 正在预加载向量模型（首次运行可能需下载约1.3GB模型文件）...
+2026-05-27 15:50:33 [INFO] app.services.embedding_svc - 加载 Embedding 模型: BAAI/bge-large-zh-v1.5 → C:\Users\Administrator\Desktop\GEO生成式搜索优化轻量化技术方案\geo-optimizer\backend\data\cache\models\BAAI\bge-large-zh-v1.5 (device=cpu)
+2026-05-27 15:50:36 [INFO] numexpr.utils - Note: NumExpr detected 24 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+2026-05-27 15:50:36 [INFO] numexpr.utils - NumExpr defaulting to 16 threads.
+2026-05-27 15:50:40 [INFO] app.services.embedding_svc - Embedding 模型加载完成（离线模式）
+2026-05-27 15:50:40 [INFO] app.services.embedding_svc - Embedding 模型加载完成
+2026-05-27 15:50:40 [INFO] app.main - 向量模型就绪，AI评测功能可用
+2026-05-27 15:50:40 [INFO] app.main - 已加载 8 条评测历史记录
