@@ -16,7 +16,7 @@ _sessions: dict[str, "EvalSession"] = {}
 class EvalSession:
     """一次完整的评测会话"""
 
-    def __init__(self):
+    def __init__(self, sandtable_type: str = "", mode: str = "pipeline"):
         self.session_id: str = uuid.uuid4().hex[:12]
         self.status: str = "running"
         self._cancelled: bool = False
@@ -25,6 +25,8 @@ class EvalSession:
         self.overall_progress: float = 0.0
         self.overall_score: float | None = None
         self._event_queue: asyncio.Queue | None = None
+        self.sandtable_type: str = sandtable_type
+        self.mode: str = mode
         self.created_at: str = datetime.now(timezone.utc).isoformat()
 
         for phase in EvalPhase:
@@ -101,6 +103,8 @@ class EvalSession:
             },
             "overall_progress": self.overall_progress,
             "overall_score": self.overall_score,
+            "sandtable_type": self.sandtable_type,
+            "mode": self.mode,
             "created_at": self.created_at,
         }
 

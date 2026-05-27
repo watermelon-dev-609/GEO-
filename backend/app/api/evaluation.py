@@ -49,7 +49,7 @@ async def start_evaluation(req: EvalStartRequest):
     """启动评测 — SSE 流式返回阶段事件"""
     evaluator = _get_evaluator(with_llm=True)
 
-    session = EvalSession()
+    session = EvalSession(sandtable_type=req.sandtable_type, mode=req.mode)
 
     if not req.dimensions:
         all_dims = DimensionRegistry.list_all()
@@ -78,7 +78,7 @@ async def start_evaluation(req: EvalStartRequest):
                 await asyncio.sleep(0.01)
         except Exception as e:
             logger.exception(f"SSE stream error for session {session.session_id}")
-            error_event = f"event: error\ndata: {json.dumps({'session_id': session.session_id, 'error': str(e)}, ensure_ascii=False)}\n\n"
+            error_event = f"event: eval_error\ndata: {json.dumps({'session_id': session.session_id, 'error': str(e)}, ensure_ascii=False)}\n\n"
             yield error_event
 
     return StreamingResponse(
@@ -109,6 +109,7 @@ async def cancel_evaluation(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
     session.cancel()
+    session.mark_cancelled()
     return {"status": "cancelled", "session_id": session_id}
 
 
@@ -132,6 +133,8 @@ async def get_history():
                 "session_id": s.session_id,
                 "status": s.status,
                 "overall_score": s.overall_score,
+                "sandtable_type": s.sandtable_type,
+                "mode": s.mode,
                 "created_at": s.created_at,
             }
             for s in sessions[:50]
