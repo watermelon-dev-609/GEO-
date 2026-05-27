@@ -384,7 +384,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
 import { getEvalDimensions, startEvalSSE, cancelEval as apiCancelEval, getEvalHistory, getEvalHistoryDetail, deleteEvalHistory, compareEvalHistory } from '../api'
@@ -522,6 +522,13 @@ onMounted(async () => {
   const firstResult = store.rewriteResults[0]
   evalText.value = firstResult?.optimized_text || store.cleanedText || ''
   originalText.value = store.originalText || ''
+})
+
+onUnmounted(() => {
+  if (sseConnection.value) {
+    sseConnection.value.close()
+    sseConnection.value = null
+  }
 })
 
 // ── 文本来源切换 ──

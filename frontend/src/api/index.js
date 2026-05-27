@@ -22,7 +22,7 @@ export const cleanText = (data) => api.post('/cleaning/clean', data)
 export const extractInfo = (data) => api.post('/cleaning/extract', data)
 
 // ── GEO文案重构 ──
-export const rewriteText = (data) => api.post('/geo/rewrite', data)
+export const rewriteText = (data, options) => api.post('/geo/rewrite', data, options)
 export const getSandtableProfile = (type) => api.get(`/geo/profiles/${type}`)
 export const getPlatformRules = (platform) => api.get(`/geo/platform-rules/${platform}`)
 

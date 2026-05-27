@@ -36,7 +36,7 @@
             :loading="isRewriting"
             @click="startRewrite"
             style="width: 100%"
-            :disabled="!sourceText || selectedPlatforms.length === 0"
+            :disabled="!sourceText || selectedPlatforms.length === 0 || isRewriting"
           >
             {{ isRewriting ? rewriteProgressText : '开始GEO优化' }}
           </el-button>
@@ -185,7 +185,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
 import { rewriteText, getSandtableProfile } from '../api'
@@ -264,6 +264,13 @@ onMounted(() => {
     }
     showReoptContext.value = true
     store.clearReoptimizeContext()
+  }
+})
+
+onUnmounted(() => {
+  if (abortController.value) {
+    abortController.value.abort()
+    abortController.value = null
   }
 })
 
@@ -378,6 +385,9 @@ async function startStreamRewrite(platform) {
 }
 
 async function startBatchRewrite() {
+  const controller = new AbortController()
+  abortController.value = controller
+
   // 逐个平台请求，每个都可感知进度
   const allPlatforms = [...selectedPlatforms.value]
   const allResults = []
@@ -394,7 +404,7 @@ async function startBatchRewrite() {
         platforms: [platform],
         dimensions: store.dimensions,
         optimization_hints: adoptedHints.value,
-      })
+      }, { signal: abortController.value?.signal })
 
       const platformResult = res.data.results?.[0]
       if (platformResult?.optimized_text) {
