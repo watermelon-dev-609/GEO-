@@ -52,13 +52,17 @@ class DimensionRegistry:
         return list(cls.DIMENSIONS.values())
 
     @classmethod
-    def list_enabled(cls, configs: list[dict]) -> list[EvalDimension]:
-        """根据配置返回启用的维度列表"""
-        enabled_keys = {c["key"] for c in configs if c.get("enabled", True)}
+    def list_enabled(cls, configs: list) -> list[EvalDimension]:
+        """根据配置返回启用的维度列表（接受 dict 或对象）"""
+        enabled_keys = {
+            c["key"] if isinstance(c, dict) else c.key
+            for c in configs
+            if (c.get("enabled", True) if isinstance(c, dict) else c.enabled)
+        }
         return [d for d in cls.list_all() if d.key in enabled_keys]
 
     @classmethod
-    def get_phases_from_configs(cls, configs: list[dict]) -> list[EvalPhase]:
+    def get_phases_from_configs(cls, configs: list) -> list[EvalPhase]:
         """从维度配置推导需要执行的阶段列表（有序、去重）"""
         dims = cls.list_enabled(configs)
         phases = list(dict.fromkeys(d.phase for d in dims))

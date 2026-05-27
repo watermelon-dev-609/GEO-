@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from .enums import (
     SandtableType, AIPlatform, UserRole,
     EvalDimension, ContentFormat, ExportFormat,
+    EvalPhase, EvalPhaseStatus,
 )
 
 
@@ -166,8 +167,6 @@ class SystemConfigResponse(BaseModel):
     data_dir: str
     version: str
 
-from .enums import EvalPhase, EvalPhaseStatus
-
 # ── 评测维度配置 ──
 
 class EvalDimensionConfig(BaseModel):
@@ -196,7 +195,7 @@ class EvalPhaseResult(BaseModel):
 class EvalSessionResponse(BaseModel):
     session_id: str
     status: str
-    phases: dict[str, EvalPhaseResult]
+    phases: dict
     overall_progress: float = 0.0
     overall_score: float | None = None
     created_at: str = ""

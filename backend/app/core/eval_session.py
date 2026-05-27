@@ -68,6 +68,7 @@ class EvalSession:
         self.status = "failed"
 
     def mark_cancelled(self):
+        self._cancelled = True
         self.status = "cancelled"
         for phase in EvalPhase:
             if self.phases[phase]["status"] == EvalPhaseStatus.PENDING.value:
