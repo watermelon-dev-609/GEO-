@@ -1,6 +1,5 @@
 # API Keys
 api_keys.yaml
-config/api_keys.yaml
 
 # Python
 __pycache__/
@@ -13,13 +12,13 @@ build/
 .venv/
 venv/
 
-# Data
-data/output/*
-data/cache/*
-data/reports/*
-!data/output/.gitkeep
-!data/cache/.gitkeep
-!data/reports/.gitkeep
+# Data (all runtime data)
+backend/data/cache/
+backend/data/output/
+backend/data/reports/
+backend/data/evaluations/
+backend/data/vectors/
+backend/data/logs/
 
 # IDE
 .vscode/
