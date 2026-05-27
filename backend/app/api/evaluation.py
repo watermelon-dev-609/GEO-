@@ -1,10 +1,15 @@
 """AI评测API路由"""
 
-from fastapi import APIRouter, HTTPException
+import asyncio
+import json
 import logging
-from app.models.schemas import EvaluateRequest, EvaluateResponse
-from app.models.enums import AIPlatform
-from app.core.evaluator import AIEvaluator, ROLE_QUESTIONS
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from app.models.schemas import EvalStartRequest
+from app.models.enums import AIPlatform, EvalPhase
+from app.core.evaluator import AIEvaluator
+from app.core.eval_session import EvalSession
+from app.core.eval_dimensions import DimensionRegistry
 from app.services.llm.base import LLMFactory
 from app.utils.config import load_settings, load_api_keys
 
@@ -39,21 +44,131 @@ def _get_evaluator(with_llm: bool = True):
     return AIEvaluator(llm_adapter=llm)
 
 
-@router.post("/semantic", response_model=EvaluateResponse)
-async def evaluate_semantic(req: EvaluateRequest):
-    """语义评测 + LLM模拟评测"""
+@router.post("/start")
+async def start_evaluation(req: EvalStartRequest):
+    """启动评测 — SSE 流式返回阶段事件"""
+    evaluator = _get_evaluator(with_llm=True)
+
+    session = EvalSession()
+
+    if not req.dimensions:
+        all_dims = DimensionRegistry.list_all()
+        has_llm = evaluator.llm is not None
+        req.dimensions = [
+            d.to_config(enabled=(not d.requires_llm or has_llm))
+            for d in all_dims
+        ]
+
+    from app.models.enums import SandtableType, UserRole
+    st = SandtableType(req.sandtable_type) if isinstance(req.sandtable_type, str) else req.sandtable_type
+    roles = [UserRole(r) for r in req.user_roles] if req.user_roles else None
+
+    async def event_generator():
+        try:
+            async for event_str in evaluator.evaluate_stream(
+                session=session,
+                optimized_text=req.optimized_text,
+                sandtable_type=st,
+                dimension_configs=req.dimensions,
+                original_text=req.original_text,
+                user_roles=roles,
+                custom_questions=req.custom_questions,
+            ):
+                yield event_str
+                await asyncio.sleep(0.01)
+        except Exception as e:
+            logger.exception(f"SSE stream error for session {session.session_id}")
+            error_event = f"event: error\ndata: {json.dumps({'session_id': session.session_id, 'error': str(e)}, ensure_ascii=False)}\n\n"
+            yield error_event
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Session-Id": session.session_id,
+        },
+    )
+
+
+@router.get("/session/{session_id}")
+async def get_session(session_id: str):
+    """查询会话状态（断线恢复）"""
+    session = EvalSession.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+    return session.to_dict()
+
+
+@router.post("/cancel/{session_id}")
+async def cancel_evaluation(session_id: str):
+    """取消评测"""
+    session = EvalSession.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+    session.cancel()
+    return {"status": "cancelled", "session_id": session_id}
+
+
+@router.get("/dimensions")
+async def get_dimensions():
+    """获取可选维度列表"""
+    all_dims = DimensionRegistry.list_all()
+    return {
+        "dimensions": [d.to_config() for d in all_dims],
+        "default_weight": 20.0,
+    }
+
+
+@router.get("/history")
+async def get_history():
+    """评测历史列表"""
+    sessions = EvalSession.list_all()
+    return {
+        "items": [
+            {
+                "session_id": s.session_id,
+                "status": s.status,
+                "overall_score": s.overall_score,
+                "created_at": s.created_at,
+            }
+            for s in sessions[:50]
+        ]
+    }
+
+
+@router.get("/history/{session_id}")
+async def get_history_detail(session_id: str):
+    """历史评测详情"""
+    session = EvalSession.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"评测记录不存在: {session_id}")
+    return session.to_dict()
+
+
+# ── 保留兼容旧接口 ──
+
+@router.post("/semantic")
+async def evaluate_semantic(req: EvalStartRequest):
+    """语义评测（同步模式，兼容旧接口）"""
     try:
         evaluator = _get_evaluator(with_llm=True)
+        from app.models.enums import SandtableType, UserRole
+        st = SandtableType(req.sandtable_type) if isinstance(req.sandtable_type, str) else req.sandtable_type
+        roles = [UserRole(r) for r in req.user_roles] if req.user_roles else None
 
         result = await evaluator.evaluate(
             optimized_text=req.optimized_text,
-            sandtable_type=req.sandtable_type,
+            sandtable_type=st,
             original_text=req.original_text,
-            platforms=req.platforms or [AIPlatform.DEEPSEEK],
-            user_roles=req.user_roles,
+            platforms=[AIPlatform.DEEPSEEK],
+            user_roles=roles,
             custom_questions=req.custom_questions,
         )
 
+        from app.models.schemas import EvaluateResponse
         return EvaluateResponse(
             overall_score=result["overall_score"],
             platform_results=result["platform_results"],
@@ -73,6 +188,7 @@ async def evaluate_semantic(req: EvaluateRequest):
 @router.get("/questions")
 async def get_preset_questions():
     """获取预置评测问题集"""
+    from app.core.evaluator import ROLE_QUESTIONS
     return {
         role.value: {
             "label": role.label,
