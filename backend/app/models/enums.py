@@ -136,6 +136,7 @@ class EvalPhase(str, Enum):
     REAL_CITATION = "real_citation"
     STRUCTURE_QUALITY = "structure_quality"
     DIFFERENTIATION = "differentiation"
+    SOURCE_CHECK = "source_check"
     COMPREHENSIVE = "comprehensive"
 
     @property
@@ -148,6 +149,7 @@ class EvalPhase(str, Enum):
             "real_citation": "真实采信率",
             "structure_quality": "结构化程度",
             "differentiation": "差异化程度",
+            "source_check": "信源一致性",
             "comprehensive": "综合评分",
         }
         return labels[self.value]
@@ -163,7 +165,8 @@ class EvalPhase(str, Enum):
             "real_citation": 4,
             "structure_quality": 5,
             "differentiation": 6,
-            "comprehensive": 7,
+            "source_check": 7,
+            "comprehensive": 8,
         }
         return order_map[self.value]
 

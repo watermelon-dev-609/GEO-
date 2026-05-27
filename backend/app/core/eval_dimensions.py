@@ -114,3 +114,10 @@ DimensionRegistry.register(EvalDimension(
     phase=EvalPhase.DIFFERENTIATION,
     requires_llm=True,
 ))
+
+DimensionRegistry.register(EvalDimension(
+    key="source_consistency",
+    label="信源一致性",
+    phase=EvalPhase.SOURCE_CHECK,
+    requires_llm=True,
+))

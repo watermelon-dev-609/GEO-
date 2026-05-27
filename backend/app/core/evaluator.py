@@ -385,6 +385,7 @@ class AIEvaluator:
         structure_result = None
         differentiation_result = None
         real_citation_result = None
+        source_consistency_result = None
 
         for phase in phase_order:
             if session.cancelled:
@@ -474,6 +475,22 @@ class AIEvaluator:
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      differentiation_result, session.overall_progress)
 
+                elif phase == EvalPhase.SOURCE_CHECK:
+                    if "source_consistency" not in enabled_keys or not self.llm:
+                        reason = "no_llm" if not self.llm else "dimension_disabled"
+                        session.skip_phase(phase)
+                        yield _sse_event("phase_skipped", session.session_id, phase.value,
+                                         {"reason": reason}, session.overall_progress)
+                        continue
+                    source_consistency_result = await self._evaluate_source_consistency(
+                        optimized_text, sandtable_type,
+                        enterprise_name="武汉微艺达智能科技有限公司",
+                        enterprise_location="武汉",
+                    )
+                    session.complete_phase(phase, source_consistency_result)
+                    yield _sse_event("phase_complete", session.session_id, phase.value,
+                                     source_consistency_result, session.overall_progress)
+
                 elif phase == EvalPhase.COMPREHENSIVE:
                     components = {}
                     if brand_result and "brand_recall" in enabled_keys:
@@ -488,6 +505,8 @@ class AIEvaluator:
                         components["differentiation"] = differentiation_result.get("average", 0)
                     if real_citation_result and "real_citation" in enabled_keys:
                         components["real_citation"] = real_citation_result.get("average", 0)
+                    if source_consistency_result and "source_consistency" in enabled_keys:
+                        components["source_consistency"] = source_consistency_result.get("average", 0)
 
                     overall = 0.0
                     for key, score in components.items():
@@ -659,6 +678,54 @@ class AIEvaluator:
         matched = sum(1 for e in entities if e in answer)
         return matched / len(entities)
 
+    async def _evaluate_source_consistency(
+        self,
+        text: str,
+        sandtable_type: SandtableType,
+        enterprise_name: str = "武汉微艺达智能科技有限公司",
+        enterprise_location: str = "武汉",
+        dimensions: dict | None = None,
+    ) -> dict:
+        """信源一致性检查：检测生成文本是否偏离企业信源数据"""
+        if not self.llm:
+            return {"average": 70, "details": [], "reason": "no_llm"}
+
+        from app.prompts.evaluation import SOURCE_CHECK_SYSTEM, SOURCE_CHECK_USER
+
+        cache_key = f"source_check:{hash(text)}"
+        cached = eval_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        dims_summary = "暂无"
+        if dimensions:
+            parts = []
+            for key, val in dimensions.items():
+                if val:
+                    items = val if isinstance(val, list) else [str(val)]
+                    parts.append(f"- {key}: {'; '.join(items[:3])}")
+            if parts:
+                dims_summary = "\n".join(parts)
+
+        try:
+            messages = [
+                LLMMessage(role="system", content=SOURCE_CHECK_SYSTEM),
+                LLMMessage(role="user", content=SOURCE_CHECK_USER.format(
+                    text=text[:3000],
+                    enterprise_name=enterprise_name,
+                    enterprise_location=enterprise_location,
+                    input_dimensions=dims_summary,
+                )),
+            ]
+            resp = await async_retry(self.llm.chat, messages, temperature=0.2, max_tokens=512)
+            score = self._extract_score(resp.content)
+            result = {"average": score, "analysis": resp.content, "details": [score]}
+            eval_cache.set(cache_key, result)
+            return result
+        except Exception as e:
+            logger.warning(f"信源一致性检查失败: {e}")
+            return {"average": 60, "details": [], "error": str(e)}
+
     def _diagnose_v2(self, scores: dict, sandtable_type: SandtableType) -> tuple[list[str], list[str]]:
         """短板诊断 v2 — 支持任意维度组合"""
         weak_points = []
@@ -677,6 +744,8 @@ class AIEvaluator:
                                 "建议：增加具体数据、专利号、获奖信息、项目量级等差异化内容"),
             "real_citation": ("真实采信率", "LLM在实际回答中引用素材信息的比例偏低",
                               "建议：增加可被直接引用的实体锚点和定义性陈述，确保品牌名、量化数据和FAQ格式在文中清晰呈现"),
+            "source_consistency": ("信源一致性", "生成文本中存在偏离企业官方信源的信息，存在AI幻觉风险",
+                                   "建议：返回GEO工坊重新优化，确保五维信息完整准确，避免LLM编造数据"),
         }
 
         has_weakness = False
