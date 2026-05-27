@@ -1,0 +1,36 @@
+# API Keys
+api_keys.yaml
+config/api_keys.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# Data
+data/output/*
+data/cache/*
+data/reports/*
+!data/output/.gitkeep
+!data/cache/.gitkeep
+!data/reports/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+frontend/node_modules/
+frontend/dist/

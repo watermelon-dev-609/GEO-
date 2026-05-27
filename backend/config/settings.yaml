@@ -1,0 +1,97 @@
+# GEO优化系统 - 主配置文件
+# 个人单机版配置
+
+system:
+  version: "1.0.0-personal"
+  enterprise_name: "武汉微艺达智能科技有限公司"
+  enterprise_location: "武汉"
+  data_dir: "./data"
+  templates_dir: "./templates"
+
+# 日志配置
+logging:
+  level: "INFO"                           # DEBUG / INFO / WARNING / ERROR
+  format: "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+  datefmt: "%Y-%m-%d %H:%M:%S"
+  file: "./data/logs/app.log"             # 留空则仅输出到控制台
+
+# LLM平台配置
+llm:
+  default_model: "deepseek"  # 默认使用的AI平台
+  request_timeout: 120        # 请求超时（秒）
+  max_retries: 3              # 最大重试次数
+  retry_delay: 2              # 重试间隔（秒）
+
+  platforms:
+    gpt:
+      enabled: false
+      model_name: "gpt-4o"
+      base_url: "https://api.openai.com/v1"
+      description: "GPT系列（通用智能·结构化总结优先）"
+
+    claude:
+      enabled: false
+      model_name: "claude-sonnet-4-6"
+      base_url: "https://api.anthropic.com"
+      description: "Claude（长文本深度采信·方案背书优先）"
+
+    wenxin:
+      enabled: false
+      model_name: "ernie-4.0-turbo"
+      base_url: "https://aip.baidubce.com"
+      description: "文心一言（国内搜索流量核心·卡片收录优先）"
+
+    tongyi:
+      enabled: false
+      model_name: "qwen-max"
+      base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      description: "通义千问（阿里系·B端政企采购优选）"
+
+    deepseek:
+      enabled: false
+      model_name: "deepseek-chat"
+      base_url: "https://api.deepseek.com/v1"
+      description: "DeepSeek（专业技术AI·工程选型优先）"
+
+    doubao:
+      enabled: false
+      model_name: "doubao-pro"
+      base_url: "https://ark.cn-beijing.volces.com/api/v3"
+      description: "字节豆包（短视频&大众AI·通俗获客优先）"
+
+    yuanbao:
+      enabled: false
+      model_name: "hunyuan-pro"
+      base_url: "https://api.hunyuan.cloud.tencent.com/v1"
+      description: "腾讯元宝（政企办公AI·供应商筛选优先）"
+
+# Embedding配置
+embedding:
+  model_name: "BAAI/bge-large-zh-v1.5"
+  device: "cpu"               # cpu / cuda
+  dimension: 1024
+  batch_size: 8
+  cache_dir: "./data/cache/models"
+  hf_endpoint: "https://hf-mirror.com"  # HuggingFace镜像（国内访问加速）
+
+# 文本处理配置
+text_processing:
+  max_chunk_size: 2000        # 最大切片字符数
+  chunk_overlap: 200          # 切片重叠字符数
+  min_cleaned_length: 50      # 清洗后最小长度
+
+# 评测配置
+evaluation:
+  questions_per_role: 10      # 每角色默认问题数
+  similarity_threshold: 0.65  # 语义匹配阈值
+  top_k_results: 5            # 检索返回数
+
+# 报表配置
+reporting:
+  radar_dimensions:
+    - core_advantage          # 核心优势
+    - scene_adaptation        # 场景适配
+    - technical_depth         # 技术深度
+    - service_completeness    # 服务完整性
+    - credibility             # 落地可信度
+    - ai_friendliness         # AI友好度

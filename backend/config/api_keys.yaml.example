@@ -1,0 +1,37 @@
+# API Key 配置文件
+# 复制此文件为 api_keys.yaml 并填入您的API Key
+# api_keys.yaml 已加入 .gitignore，不会提交到版本控制
+
+# 按需配置，未配置的平台将自动跳过
+# 获取API Key的地址：
+#   GPT:       https://platform.openai.com/api-keys
+#   Claude:    https://console.anthropic.com/
+#   文心一言:  https://console.bce.baidu.com/
+#   通义千问:  https://dashscope.console.aliyun.com/
+#   DeepSeek:  https://platform.deepseek.com/
+#   豆包:      https://console.volcengine.com/ark/
+#   元宝:      https://console.cloud.tencent.com/hunyuan
+
+platforms:
+  gpt:
+    api_key: "your-openai-api-key-here"
+
+  claude:
+    api_key: "your-anthropic-api-key-here"
+
+  wenxin:
+    api_key: "your-baidu-api-key-here"
+    secret_key: "your-baidu-secret-key-here"
+
+  tongyi:
+    api_key: "your-dashscope-api-key-here"
+
+  deepseek:
+    api_key: "your-deepseek-api-key-here"
+
+  doubao:
+    api_key: "your-volcengine-api-key-here"
+
+  yuanbao:
+    api_key: "your-hunyuan-api-key-here"
+    secret_id: "your-tencent-secret-id-here"

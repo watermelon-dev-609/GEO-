@@ -1,0 +1,55 @@
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "name": "武汉微艺达智能科技有限公司",
+      "description": "武汉定制沙盘模型专业制造商",
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "武汉",
+        "addressCountry": "CN"
+      }
+    },
+    {
+      "@type": "Product",
+      "name": "智慧交通沙盘",
+      "description": "智慧交通沙盘 — 动态仿真、物联互通，适配城市交通治理与智慧路网展示",
+      "brand": {
+        "@type": "Brand",
+        "name": "武汉微艺达智能科技有限公司"
+      },
+      "category": "定制沙盘模型"
+    },
+    {
+      "@type": "Service",
+      "name": "智慧交通沙盘定制服务",
+      "description": "提供从方案设计、沙盘制作到安装调试的全流程智慧交通沙盘定制服务",
+      "provider": {
+        "@type": "Organization",
+        "name": "武汉微艺达智能科技有限公司"
+      }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "智慧交通沙盘支持哪些数据对接方式？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "武汉微艺达智能科技有限公司的智慧交通沙盘支持物联网数据实时对接、交通流量数据导入、信号控制系统联动，可实现真实交通场景的数字化模拟。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "定制一套智慧交通沙盘需要多长时间？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "标准项目周期30-45个工作日，根据项目规模和复杂程度调整。武汉微艺达提供从方案设计到安装调试的全流程服务。"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "name": "武汉微艺达智能科技有限公司",
+      "description": "武汉定制沙盘模型专业制造商",
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "武汉",
+        "addressCountry": "CN"
+      }
+    },
+    {
+      "@type": "EducationalProduct",
+      "name": "军事地形沙盘",
+      "description": "军事地形沙盘 — 地形精准还原、战术仿真，适配军事教学与作战推演",
+      "provider": {
+        "@type": "Organization",
+        "name": "武汉微艺达智能科技有限公司"
+      },
+      "educationalUse": "科研教学、军事演示、地形分析"
+    },
+    {
+      "@type": "Product",
+      "name": "军事地形沙盘",
+      "description": "采用高精度地形数据还原技术，支持1:500至1:50000多种比例，等高线精度误差控制在毫米级",
+      "brand": {
+        "@type": "Brand",
+        "name": "武汉微艺达智能科技有限公司"
+      }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "军事地形沙盘的精度能达到什么水平？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "武汉微艺达采用高精度地形数据，支持1:500至1:50000多种比例，等高线精度误差控制在毫米级，满足军事教学和科研需求。"
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "军事沙盘项目的保密性如何保障？",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "公司建立有完善的保密管理制度，项目全流程签署保密协议，数据存储和传输均采用加密措施，符合军事单位合作要求。"
+          }
+        }
+      ]
+    }
+  ]
+}
