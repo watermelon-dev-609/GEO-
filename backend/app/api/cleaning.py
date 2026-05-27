@@ -14,28 +14,43 @@ router = APIRouter()
 
 
 def _get_cleaner() -> TextCleaner:
-    """获取清洗器实例"""
+    """获取清洗器实例 — 优先用 default_model，不可用则自动选择第一个已配置的平台"""
     settings = load_settings()
     api_keys = load_api_keys()
-    default_platform = settings.get("llm", {}).get("default_model", "deepseek")
-    plat_cfg = settings.get("llm", {}).get("platforms", {}).get(default_platform, {})
-    key_info = api_keys.get("platforms", {}).get(default_platform, {})
 
-    api_key = key_info.get("api_key", "")
-    if not api_key or "your-" in api_key:
+    # 收集所有已配置 Key 的平台
+    platforms_cfg = settings.get("llm", {}).get("platforms", {})
+    available = []
+    for plat_key, plat_cfg in platforms_cfg.items():
+        key_info = api_keys.get("platforms", {}).get(plat_key, {})
+        api_key = key_info.get("api_key", "")
+        if api_key and "your-" not in api_key:
+            available.append((plat_key, plat_cfg, key_info))
+
+    if not available:
         raise HTTPException(
             status_code=400,
-            detail=f"请先在 config/api_keys.yaml 中配置 {default_platform} 的API Key"
+            detail="暂未配置任何AI平台的API Key，请在侧边栏「配置API Key」中配置"
         )
 
-    adapter_type = AIPlatform(default_platform).adapter_type
+    # 优先用 default_model，否则用第一个可用的
+    default_platform = settings.get("llm", {}).get("default_model", "")
+    selected = None
+    for plat_key, plat_cfg, key_info in available:
+        if plat_key == default_platform:
+            selected = (plat_key, plat_cfg, key_info)
+            break
+    if selected is None:
+        selected = available[0]
+
+    plat_key, plat_cfg, key_info = selected
+    adapter_type = AIPlatform(plat_key).adapter_type
     adapter = LLMFactory.create(
         platform=adapter_type,
-        api_key=api_key,
+        api_key=key_info.get("api_key", ""),
         model_name=plat_cfg.get("model_name", ""),
         base_url=plat_cfg.get("base_url"),
     )
-    # 文心一言需要额外传入 secret_key
     if adapter_type == "wenxin":
         adapter.secret_key = key_info.get("secret_key", "")
 
