@@ -66,11 +66,17 @@ export const useGeoStore = defineStore('geo', () => {
   const scoreTrend = computed(() => {
     const scored = evalHistory.value.filter(h => h.overall_score !== null)
     if (scored.length < 2) return null
-    const latest = scored[0].overall_score
-    const previous = scored[1].overall_score
-    if (latest > previous) return 'up'
-    if (latest < previous) return 'down'
-    return 'stable'
+    // 限定同沙盘类型对比，否则无意义
+    const currentType = currentSandtableType.value || scored[0]?.sandtable_type
+    const same = scored.filter(h => h.sandtable_type === currentType)
+    if (same.length >= 2) {
+      const latest = same[0].overall_score
+      const previous = same[1].overall_score
+      if (latest > previous) return 'up'
+      if (latest < previous) return 'down'
+      return 'stable'
+    }
+    return null
   })
 
   // ── 重优化上下文 ──

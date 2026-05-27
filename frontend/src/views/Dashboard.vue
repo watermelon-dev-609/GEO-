@@ -111,8 +111,11 @@
     </el-row>
 
     <el-card shadow="never" style="margin-top: 24px;" v-if="recentProjects.length > 0">
-      <template #header><span>最近项目</span></template>
-      <el-table :data="recentProjects" style="width: 100%" size="small">
+      <template #header>
+        <span>最近项目</span>
+        <span style="font-size:12px;color:#909399;margin-left:8px;">点击行可跳转继续工作</span>
+      </template>
+      <el-table :data="recentProjects" style="width: 100%" size="small" @row-click="onProjectClick" :row-style="{ cursor: 'pointer' }">
         <el-table-column prop="name" label="项目名称" />
         <el-table-column prop="sandtableType" label="沙盘类型" width="150" />
         <el-table-column prop="status" label="状态" width="100" />
@@ -124,9 +127,11 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
 import { getLLMConfig, getEvalHistory } from '../api'
 
+const router = useRouter()
 const store = useGeoStore()
 
 const evalHistory = ref([])
@@ -174,6 +179,16 @@ async function loadEvalHistory() {
     evalHistory.value = res.data.items || []
   } catch { /* ignore */ }
   finally { evalHistoryLoading.value = false }
+}
+
+function onProjectClick(row) {
+  const pageMap = {
+    '文案清洗': '/import',
+    'GEO优化': '/workshop',
+    'AI评测': '/evaluation',
+  }
+  const target = pageMap[row.name] || '/dashboard'
+  router.push(target)
 }
 
 function formatShortDate(dateStr) {

@@ -12,34 +12,21 @@
           <template #header><span>评测配置</span></template>
 
           <el-form label-position="top" size="default">
-            <!-- 评测模式 -->
-            <el-form-item label="评测模式">
-              <el-radio-group v-model="evalMode" @change="onModeChange">
-                <el-radio-button value="pipeline">流程模式</el-radio-button>
-                <el-radio-button value="standalone">独立模式</el-radio-button>
-              </el-radio-group>
-            </el-form-item>
-
             <!-- 文本来源 -->
             <el-form-item label="评测文本">
-              <template v-if="evalMode === 'pipeline'">
-                <el-select v-model="textSource" style="width: 100%" @change="onTextSourceChange">
-                  <el-option label="使用优化结果（第一条）" value="rewrite" />
-                  <el-option label="手动输入" value="manual" />
-                </el-select>
-                <el-input
-                  v-if="textSource === 'manual'"
-                  v-model="evalText"
-                  type="textarea"
-                  :rows="6"
-                  placeholder="粘贴需要评测的文案"
-                  style="margin-top: 8px"
-                />
-                <div v-else class="text-preview">{{ evalText?.substring(0, 200) }}{{ evalText?.length > 200 ? '...' : '' }}</div>
-              </template>
-              <template v-else>
-                <el-input v-model="evalText" type="textarea" :rows="8" placeholder="粘贴需要评测的文案..." />
-              </template>
+              <el-select v-if="store.hasResults || store.hasCleanedText" v-model="textSource" style="width: 100%" @change="onTextSourceChange">
+                <el-option label="使用优化结果" value="rewrite" :disabled="!store.hasResults" />
+                <el-option label="使用清洗后文案" value="cleaned" :disabled="!store.hasCleanedText" />
+                <el-option label="手动输入" value="manual" />
+              </el-select>
+              <el-input
+                v-if="textSource === 'manual' || (!store.hasResults && !store.hasCleanedText)"
+                v-model="evalText"
+                type="textarea"
+                :rows="8"
+                placeholder="粘贴需要评测的文案..."
+              />
+              <div v-else class="text-preview">{{ evalText?.substring(0, 200) }}{{ evalText?.length > 200 ? '...' : '' }}</div>
             </el-form-item>
 
             <!-- 对比原文 -->
@@ -394,8 +381,7 @@ const router = useRouter()
 const store = useGeoStore()
 
 // ── 配置状态 ──
-const evalMode = ref(store.evalMode || 'pipeline')
-const textSource = ref('rewrite')
+const textSource = ref(store.hasResults ? 'rewrite' : (store.hasCleanedText ? 'cleaned' : 'manual'))
 const evalText = ref('')
 const originalText = ref('')
 const sandtableType = ref(store.currentSandtableType || 'smart_traffic')
@@ -519,20 +505,12 @@ onMounted(async () => {
   originalText.value = store.originalText || ''
 })
 
-// ── 模式切换 ──
-function onModeChange(val) {
-  store.setEvalMode(val)
-  if (val === 'standalone') {
-    evalText.value = ''
-  } else {
-    const firstResult = store.rewriteResults[0]
-    evalText.value = firstResult?.optimized_text || store.cleanedText || ''
-  }
-}
+// ── 文本来源切换 ──
 function onTextSourceChange(val) {
   if (val === 'rewrite') {
-    const firstResult = store.rewriteResults[0]
-    evalText.value = firstResult?.optimized_text || store.cleanedText || ''
+    evalText.value = store.rewriteResults[0]?.optimized_text || ''
+  } else if (val === 'cleaned') {
+    evalText.value = store.cleanedText || ''
   } else {
     evalText.value = ''
   }
@@ -592,7 +570,7 @@ async function startEval() {
       dimensions: dimensionConfigs.value
         .filter(d => d.enabled)
         .map(d => ({ key: d.key, label: d.label, requires_llm: d.requires_llm, weight: d.weight, enabled: d.enabled })),
-      mode: evalMode.value,
+      mode: (store.hasResults || store.hasCleanedText) ? 'pipeline' : 'standalone',
     },
     // onEvent
     (eventType, payload) => {
@@ -635,7 +613,7 @@ async function startEval() {
           status: 'completed',
           overall_score: payload.data?.overall_score ?? null,
           sandtable_type: sandtableType.value,
-          mode: evalMode.value,
+          mode: (store.hasResults || store.hasCleanedText) ? 'pipeline' : 'standalone',
           created_at: new Date().toISOString(),
           phases: payload.data,
           evaluated_text: evalText.value,
