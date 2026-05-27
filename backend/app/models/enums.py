@@ -125,3 +125,50 @@ class ExportFormat(str, Enum):
     PDF = "pdf"
     JSON = "json"
     ZIP = "zip"
+
+
+class EvalPhase(str, Enum):
+    """评测阶段"""
+    GENERATING_QUESTIONS = "generating_questions"
+    BRAND_RECALL = "brand_recall"
+    SOLUTION_MATCH = "solution_match"
+    ADVANTAGE_CITATION = "advantage_citation"
+    STRUCTURE_QUALITY = "structure_quality"
+    DIFFERENTIATION = "differentiation"
+    COMPREHENSIVE = "comprehensive"
+
+    @property
+    def label(self) -> str:
+        labels = {
+            "generating_questions": "生成评测问题",
+            "brand_recall": "品牌召回率",
+            "solution_match": "方案匹配度",
+            "advantage_citation": "优势采信率",
+            "structure_quality": "结构化程度",
+            "differentiation": "差异化程度",
+            "comprehensive": "综合评分",
+        }
+        return labels[self.value]
+
+    @property
+    def order(self) -> int:
+        """阶段执行顺序"""
+        order_map = {
+            "generating_questions": 0,
+            "brand_recall": 1,
+            "solution_match": 2,
+            "advantage_citation": 3,
+            "structure_quality": 4,
+            "differentiation": 5,
+            "comprehensive": 6,
+        }
+        return order_map[self.value]
+
+
+class EvalPhaseStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
