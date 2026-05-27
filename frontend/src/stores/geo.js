@@ -20,6 +20,15 @@ export const useGeoStore = defineStore('geo', () => {
   // ── 系统配置 ──
   const llmConfigs = ref([])
 
+  // ── 评测会话状态 ──
+  const evalSessionId = ref(null)
+  const evalStatus = ref('idle') // idle | running | completed | cancelled | failed
+  const evalPhases = ref({})
+  const evalOverallProgress = ref(0)
+  const evalOverallScore = ref(null)
+  const evalMode = ref('pipeline')
+  const evalDimensionConfigs = ref([])
+
   // ── Computed ──
   const hasCleanedText = computed(() => !!cleanedText.value)
   const hasResults = computed(() => rewriteResults.value.length > 0)
@@ -51,6 +60,24 @@ export const useGeoStore = defineStore('geo', () => {
     }
   }
 
+  function setEvalSessionId(id) { evalSessionId.value = id }
+  function setEvalStatus(status) { evalStatus.value = status }
+  function setEvalPhase(phaseKey, data) {
+    evalPhases.value = { ...evalPhases.value, [phaseKey]: data }
+  }
+  function setEvalProgress(progress) { evalOverallProgress.value = progress }
+  function setEvalScore(score) { evalOverallScore.value = score }
+  function setEvalMode(mode) { evalMode.value = mode }
+  function setEvalDimensionConfigs(configs) { evalDimensionConfigs.value = configs }
+
+  function resetEvalSession() {
+    evalSessionId.value = null
+    evalStatus.value = 'idle'
+    evalPhases.value = {}
+    evalOverallProgress.value = 0
+    evalOverallScore.value = null
+  }
+
   function reset() {
     currentStep.value = 'import'
     originalText.value = ''
@@ -70,5 +97,9 @@ export const useGeoStore = defineStore('geo', () => {
     setOriginalText, setCleanedText, setSandtableType, setDimensions,
     setRewriteResults, setEvaluationResult, setSelectedPlatforms,
     setLLMConfigs, setProcessing, addToHistory, reset,
+    evalSessionId, evalStatus, evalPhases, evalOverallProgress,
+    evalOverallScore, evalMode, evalDimensionConfigs,
+    setEvalSessionId, setEvalStatus, setEvalPhase, setEvalProgress,
+    setEvalScore, setEvalMode, setEvalDimensionConfigs, resetEvalSession,
   }
 })
