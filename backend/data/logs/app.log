@@ -161,3 +161,11 @@ ModuleNotFoundError("No module named 'faiss.swigfaiss_avx2'")
 2026-05-27 14:04:22 [INFO] app.services.embedding_svc - Embedding 模型加载完成
 2026-05-27 14:04:22 [INFO] app.main - 向量模型就绪，AI评测功能可用
 2026-05-27 14:04:22 [INFO] app.main - 已加载 3 条评测历史记录
+2026-05-27 14:13:50 [INFO] app.main - 正在预加载向量模型（首次运行可能需下载约1.3GB模型文件）...
+2026-05-27 14:13:50 [INFO] app.services.embedding_svc - 加载 Embedding 模型: BAAI/bge-large-zh-v1.5 → C:\Users\Administrator\Desktop\GEO生成式搜索优化轻量化技术方案\geo-optimizer\backend\data\cache\models\BAAI\bge-large-zh-v1.5 (device=cpu)
+2026-05-27 14:13:53 [INFO] numexpr.utils - Note: NumExpr detected 24 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+2026-05-27 14:13:53 [INFO] numexpr.utils - NumExpr defaulting to 16 threads.
+2026-05-27 14:13:58 [INFO] app.services.embedding_svc - Embedding 模型加载完成（离线模式）
+2026-05-27 14:13:58 [INFO] app.services.embedding_svc - Embedding 模型加载完成
+2026-05-27 14:13:58 [INFO] app.main - 向量模型就绪，AI评测功能可用
+2026-05-27 14:13:58 [INFO] app.main - 已加载 3 条评测历史记录

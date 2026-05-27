@@ -95,6 +95,13 @@ DimensionRegistry.register(EvalDimension(
 ))
 
 DimensionRegistry.register(EvalDimension(
+    key="real_citation",
+    label="真实采信率",
+    phase=EvalPhase.REAL_CITATION,
+    requires_llm=True,
+))
+
+DimensionRegistry.register(EvalDimension(
     key="structure_quality",
     label="结构化程度",
     phase=EvalPhase.STRUCTURE_QUALITY,

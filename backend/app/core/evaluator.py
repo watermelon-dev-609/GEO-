@@ -384,6 +384,7 @@ class AIEvaluator:
         advantage_result = None
         structure_result = None
         differentiation_result = None
+        real_citation_result = None
 
         for phase in phase_order:
             if session.cancelled:
@@ -437,6 +438,18 @@ class AIEvaluator:
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      advantage_result, session.overall_progress)
 
+                elif phase == EvalPhase.REAL_CITATION:
+                    if "real_citation" not in enabled_keys or not self.llm:
+                        reason = "no_llm" if not self.llm else "dimension_disabled"
+                        session.skip_phase(phase)
+                        yield _sse_event("phase_skipped", session.session_id, phase.value,
+                                         {"reason": reason}, session.overall_progress)
+                        continue
+                    real_citation_result = await self._evaluate_real_citation(questions, optimized_text, sandtable_type)
+                    session.complete_phase(phase, real_citation_result)
+                    yield _sse_event("phase_complete", session.session_id, phase.value,
+                                     real_citation_result, session.overall_progress)
+
                 elif phase == EvalPhase.STRUCTURE_QUALITY:
                     if "structure_quality" not in enabled_keys or not self.llm:
                         reason = "no_llm" if not self.llm else "dimension_disabled"
@@ -473,6 +486,8 @@ class AIEvaluator:
                         components["structure_quality"] = structure_result.get("average", 0)
                     if differentiation_result and "differentiation" in enabled_keys:
                         components["differentiation"] = differentiation_result.get("average", 0)
+                    if real_citation_result and "real_citation" in enabled_keys:
+                        components["real_citation"] = real_citation_result.get("average", 0)
 
                     overall = 0.0
                     for key, score in components.items():
@@ -560,6 +575,90 @@ class AIEvaluator:
         eval_cache.set(cache_key, result)
         return result
 
+    async def _evaluate_real_citation(
+        self,
+        questions: list[str],
+        text: str,
+        sandtable_type: SandtableType,
+    ) -> dict:
+        """真实引用测试：以文案为素材让LLM回答真实问题，检测引用率"""
+        if not self.llm:
+            return {"average": 0, "details": [], "reason": "no_llm"}
+
+        from app.prompts.evaluation import REAL_CITATION_SYSTEM, REAL_CITATION_USER
+
+        sample_qs = questions[:5] if len(questions) > 5 else questions
+        cited = 0
+        details = []
+
+        for q in sample_qs:
+            cache_key = f"real_cite:{hash(q + text)}"
+            cached = eval_cache.get(cache_key)
+            if cached is not None:
+                details.append(cached)
+                if cached.get("cited"):
+                    cited += 1
+                continue
+
+            try:
+                messages = [
+                    LLMMessage(role="system", content=REAL_CITATION_SYSTEM),
+                    LLMMessage(role="user", content=REAL_CITATION_USER.format(
+                        text=text[:3000],
+                        question=q,
+                    )),
+                ]
+                resp = await async_retry(self.llm.chat, messages, temperature=0.5, max_tokens=512)
+
+                citation_score = self._analyze_citation(resp.content, text)
+                cited_flag = citation_score > 0.3  # 30%以上实体被引用即视为有效引用
+                if cited_flag:
+                    cited += 1
+
+                detail = {
+                    "question": q,
+                    "answer": resp.content[:300],
+                    "cited": cited_flag,
+                    "citation_score": round(citation_score * 100, 1),
+                }
+                details.append(detail)
+                eval_cache.set(cache_key, detail)
+            except Exception as e:
+                logger.warning(f"真实引用测试失败: {e}")
+                details.append({"question": q, "cited": False, "citation_score": 0, "error": str(e)})
+
+        avg = (cited / len(sample_qs)) * 100 if sample_qs else 0
+        return {
+            "average": round(avg, 1),
+            "details": details,
+            "cited_count": cited,
+            "total": len(sample_qs),
+        }
+
+    def _analyze_citation(self, answer: str, source_text: str) -> float:
+        """分析 LLM 回答是否引用了源文本中的关键实体"""
+        import re
+
+        entities = set()
+        # 品牌/企业名
+        for m in re.finditer(r'(武汉微艺达|微艺达智能科技|微艺达|沙盘模型|定制沙盘)', source_text):
+            entities.add(m.group())
+        # 量化数据（数字+单位）
+        for m in re.finditer(r'\d+[+]*\s*(个|项|套|年|㎡|平方米|公里|人|次|万元|亿|%)', source_text):
+            entities.add(m.group())
+        # 精度/比例
+        for m in re.finditer(r'\d+[:：]\d+', source_text):
+            entities.add(m.group())
+        # 技术术语（3-6字中文 + 技术后缀词）
+        for m in re.finditer(r'[一-龥]{3,6}(?:系统|平台|模型|技术|方案|工艺|仿真|沙盘|数据|控制|联动|展示)', source_text):
+            entities.add(m.group())
+
+        if not entities:
+            return 0.0
+
+        matched = sum(1 for e in entities if e in answer)
+        return matched / len(entities)
+
     def _diagnose_v2(self, scores: dict, sandtable_type: SandtableType) -> tuple[list[str], list[str]]:
         """短板诊断 v2 — 支持任意维度组合"""
         weak_points = []
@@ -576,6 +675,8 @@ class AIEvaluator:
                                   "建议：增加清晰的标题层级，使用列表呈现关键信息，控制段落长度在200字以内"),
             "differentiation": ("差异化程度", "文本缺乏独特信息，易被竞品内容替代",
                                 "建议：增加具体数据、专利号、获奖信息、项目量级等差异化内容"),
+            "real_citation": ("真实采信率", "LLM在实际回答中引用素材信息的比例偏低",
+                              "建议：增加可被直接引用的实体锚点和定义性陈述，确保品牌名、量化数据和FAQ格式在文中清晰呈现"),
         }
 
         has_weakness = False

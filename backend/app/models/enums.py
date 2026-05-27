@@ -133,6 +133,7 @@ class EvalPhase(str, Enum):
     BRAND_RECALL = "brand_recall"
     SOLUTION_MATCH = "solution_match"
     ADVANTAGE_CITATION = "advantage_citation"
+    REAL_CITATION = "real_citation"
     STRUCTURE_QUALITY = "structure_quality"
     DIFFERENTIATION = "differentiation"
     COMPREHENSIVE = "comprehensive"
@@ -144,6 +145,7 @@ class EvalPhase(str, Enum):
             "brand_recall": "品牌召回率",
             "solution_match": "方案匹配度",
             "advantage_citation": "优势采信率",
+            "real_citation": "真实采信率",
             "structure_quality": "结构化程度",
             "differentiation": "差异化程度",
             "comprehensive": "综合评分",
@@ -158,9 +160,10 @@ class EvalPhase(str, Enum):
             "brand_recall": 1,
             "solution_match": 2,
             "advantage_citation": 3,
-            "structure_quality": 4,
-            "differentiation": 5,
-            "comprehensive": 6,
+            "real_citation": 4,
+            "structure_quality": 5,
+            "differentiation": 6,
+            "comprehensive": 7,
         }
         return order_map[self.value]
 
