@@ -1,6 +1,9 @@
 <template>
   <div class="eval-view">
-    <h2 class="page-title">AI评测中心</h2>
+    <div class="page-header">
+      <h2 class="page-title">AI评测中心</h2>
+      <el-button size="small" @click="openHistory" :icon="Clock">评测历史</el-button>
+    </div>
 
     <el-row :gutter="20">
       <!-- 左侧：配置面板 -->
@@ -251,11 +254,113 @@
           <!-- 操作 -->
           <div style="text-align: right; margin-top: 16px">
             <el-button type="primary" @click="resetEval">重新评测</el-button>
+            <el-button type="warning" @click="goToOptimize">返回GEO工坊优化</el-button>
             <el-button type="success" @click="goToExport">导出报告</el-button>
           </div>
         </div>
       </el-col>
     </el-row>
+
+    <!-- 评测历史抽屉 -->
+    <el-drawer v-model="historyDrawerVisible" title="评测历史" size="480px" direction="rtl">
+      <div v-if="historyItems.length === 0" class="history-empty">
+        <el-icon :size="48" color="#c0c4cc"><Clock /></el-icon>
+        <p style="margin-top: 12px; color: #909399;">暂无评测历史</p>
+      </div>
+      <div v-else>
+        <div v-for="item in historyItems" :key="item.session_id" class="history-item">
+          <div class="history-item-main" @click="toggleHistoryDetail(item)">
+            <div class="history-item-left">
+              <el-checkbox
+                v-model="item._selected"
+                @change="onCompareSelect(item)"
+                @click.stop
+              />
+              <div class="history-item-info">
+                <div class="history-item-date">{{ formatDate(item.created_at) }}</div>
+                <div class="history-item-meta">
+                  <el-tag size="small" type="info">{{ item.sandtable_type || '未知' }}</el-tag>
+                  <el-tag size="small" :type="item.status === 'completed' ? 'success' : 'warning'">
+                    {{ item.status === 'completed' ? '已完成' : item.status }}
+                  </el-tag>
+                </div>
+              </div>
+            </div>
+            <div class="history-item-score" :style="{ color: scoreColor(item.overall_score) }">
+              {{ item.overall_score ?? '-' }}分
+            </div>
+            <el-button
+              size="small"
+              type="danger"
+              :icon="Delete"
+              circle
+              @click.stop="deleteHistoryItem(item)"
+            />
+          </div>
+          <!-- 展开详情 -->
+          <div v-if="item._expanded" class="history-item-detail">
+            <div v-if="item._loading" v-loading="true" style="min-height: 80px;" />
+            <div v-else-if="item._detail">
+              <div v-for="dim in getDetailDimensions(item._detail)" :key="dim.key" class="history-dim-row">
+                <span>{{ dim.label }}</span>
+                <el-progress :percentage="dim.score" :color="scoreColor(dim.score)" :stroke-width="6" style="flex:1;margin:0 8px" />
+                <span>{{ dim.score }}分</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 对比按钮 -->
+        <div v-if="compareEnabled" style="text-align: center; margin-top: 16px;">
+          <el-button type="primary" @click="doCompare">对比评测 ({{ selectedForCompare.length }}/2)</el-button>
+        </div>
+      </div>
+    </el-drawer>
+
+    <!-- 对比弹窗 -->
+    <el-dialog v-model="compareDialogVisible" title="评测对比" width="700px" :destroy-on-close="true">
+      <div v-if="compareLoading" v-loading="true" style="min-height: 200px;" />
+      <div v-else-if="compareData">
+        <el-row :gutter="20">
+          <el-col :span="11">
+            <el-card shadow="never" size="small">
+              <template #header><span>评测 1</span></template>
+              <div class="compare-score" :style="{ color: scoreColor(compareData.session_1.overall_score) }">
+                {{ compareData.session_1.overall_score }}分
+              </div>
+              <div v-for="(score, key) in compareData.session_1.dimension_scores" :key="key" class="compare-dim">
+                <span>{{ key }}</span><span>{{ score }}分</span>
+              </div>
+            </el-card>
+          </el-col>
+          <el-col :span="2" style="display:flex;align-items:center;justify-content:center;">
+            <div>
+              <div v-for="(delta, key) in compareData.deltas" :key="key" style="margin:2px 0;font-size:12px;text-align:center;">
+                <span :style="{ color: delta > 0 ? '#67C23A' : delta < 0 ? '#F56C6C' : '#909399' }">
+                  {{ delta > 0 ? '+' : '' }}{{ delta }}
+                </span>
+              </div>
+              <div style="font-weight:bold;text-align:center;margin-top:4px;">
+                <span :style="{ color: compareData.overall_delta > 0 ? '#67C23A' : compareData.overall_delta < 0 ? '#F56C6C' : '#909399' }">
+                  {{ compareData.overall_delta > 0 ? '+' : '' }}{{ compareData.overall_delta }}
+                </span>
+              </div>
+            </div>
+          </el-col>
+          <el-col :span="11">
+            <el-card shadow="never" size="small">
+              <template #header><span>评测 2</span></template>
+              <div class="compare-score" :style="{ color: scoreColor(compareData.session_2.overall_score) }">
+                {{ compareData.session_2.overall_score }}分
+              </div>
+              <div v-for="(score, key) in compareData.session_2.dimension_scores" :key="key" class="compare-dim">
+                <span>{{ key }}</span><span>{{ score }}分</span>
+              </div>
+            </el-card>
+          </el-col>
+        </el-row>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -263,8 +368,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
-import { getEvalDimensions, startEvalSSE, cancelEval as apiCancelEval } from '../api'
-import { ElMessage } from 'element-plus'
+import { getEvalDimensions, startEvalSSE, cancelEval as apiCancelEval, getEvalHistory, getEvalHistoryDetail, deleteEvalHistory, compareEvalHistory } from '../api'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Clock, Delete } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const store = useGeoStore()
@@ -291,6 +397,14 @@ const evalSessionId = ref(null)
 const sseConnection = ref(null)
 
 const phaseStates = ref({})
+
+// ── 历史相关 ──
+const historyDrawerVisible = ref(false)
+const historyItems = ref([])
+const selectedForCompare = ref([])
+const compareDialogVisible = ref(false)
+const compareLoading = ref(false)
+const compareData = ref(null)
 
 const phaseOrderDef = [
   { key: 'generating_questions', label: '生成评测问题', status: 'pending', score: null, result: null },
@@ -334,6 +448,8 @@ const statusTagType = computed(() => {
   if (evalStatus.value === 'cancelled') return 'warning'
   return 'info'
 })
+const compareEnabled = computed(() => selectedForCompare.value.length === 2)
+
 const statusLabel = computed(() => {
   if (evalStatus.value === 'running') return '评测中'
   if (evalStatus.value === 'completed') return '已完成'
@@ -487,6 +603,17 @@ async function startEval() {
           status: `评分: ${evalOverallScore.value}分`,
         })
         ElMessage.success(`评测完成！综合评分: ${evalOverallScore.value}分`)
+        // 保存到历史
+        store.pushToHistory({
+          session_id: payload.session_id,
+          status: 'completed',
+          overall_score: payload.data?.overall_score ?? null,
+          sandtable_type: sandtableType.value,
+          mode: evalMode.value,
+          created_at: new Date().toISOString(),
+          phases: payload.data,
+          evaluated_text: evalText.value,
+        })
       }
 
       if (eventType === 'eval_error') {
@@ -531,6 +658,118 @@ function resetEval() {
   evalSessionId.value = null
   phaseStates.value = {}
 }
+// ── 历史抽屉 ──
+async function openHistory() {
+  historyDrawerVisible.value = true
+  await loadHistory()
+}
+
+async function loadHistory() {
+  try {
+    const res = await getEvalHistory()
+    historyItems.value = (res.data.items || []).map(item => ({
+      ...item,
+      _selected: false,
+      _expanded: false,
+      _loading: false,
+      _detail: null,
+    }))
+  } catch {
+    // 静默失败
+  }
+}
+
+function toggleHistoryDetail(item) {
+  item._expanded = !item._expanded
+  if (item._expanded && !item._detail && !item._loading) {
+    loadHistoryDetail(item)
+  }
+}
+
+async function loadHistoryDetail(item) {
+  item._loading = true
+  try {
+    const res = await getEvalHistoryDetail(item.session_id)
+    item._detail = res.data
+    item._loading = false
+  } catch {
+    item._loading = false
+  }
+}
+
+function getDetailDimensions(detail) {
+  const comp = detail?.phases?.comprehensive?.result
+  if (!comp?.dimension_scores) return []
+  return Object.entries(comp.dimension_scores).map(([key, score]) => {
+    const dim = dimensionConfigs.value.find(d => d.key === key)
+    return { key, label: dim?.label || key, score }
+  })
+}
+
+function onCompareSelect(item) {
+  if (item._selected) {
+    if (selectedForCompare.value.length >= 2) {
+      // 取消最早选择的
+      const first = selectedForCompare.value.shift()
+      const found = historyItems.value.find(h => h.session_id === first.session_id)
+      if (found) found._selected = false
+    }
+    selectedForCompare.value.push(item)
+  } else {
+    selectedForCompare.value = selectedForCompare.value.filter(h => h.session_id !== item.session_id)
+  }
+}
+
+async function doCompare() {
+  if (selectedForCompare.value.length !== 2) return
+  compareDialogVisible.value = true
+  compareLoading.value = true
+  try {
+    const res = await compareEvalHistory({
+      session_ids: [selectedForCompare.value[0].session_id, selectedForCompare.value[1].session_id],
+    })
+    compareData.value = res.data
+  } catch {
+    // ignore
+  } finally {
+    compareLoading.value = false
+  }
+}
+
+async function deleteHistoryItem(item) {
+  try {
+    await ElMessageBox.confirm(`确定要删除这条评测记录吗？`, '删除确认', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    await deleteEvalHistory(item.session_id)
+    historyItems.value = historyItems.value.filter(h => h.session_id !== item.session_id)
+    selectedForCompare.value = selectedForCompare.value.filter(h => h.session_id !== item.session_id)
+    ElMessage.success('已删除')
+  } catch {
+    // 用户取消
+  }
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// ── 重优化 ──
+function goToOptimize() {
+  store.setReoptimizeContext({
+    weakPoints: weakPoints.value,
+    suggestions: suggestions.value,
+    sourceText: evalText.value,
+    sandtableType: sandtableType.value,
+  })
+  router.push('/workshop')
+}
+
 function goToExport() {
   router.push('/export')
 }
@@ -538,6 +777,8 @@ function goToExport() {
 
 <style scoped>
 .eval-view { max-width: 1300px; }
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.page-header .page-title { margin-bottom: 0; }
 .page-title { font-size: 20px; margin-bottom: 20px; color: #303133; }
 
 .config-card { position: sticky; top: 24px; }
@@ -576,4 +817,17 @@ function goToExport() {
 .comp-item { text-align: center; }
 .comp-label { font-size: 13px; color: #909399; display: block; }
 .comp-value { font-size: 24px; font-weight: bold; color: #303133; }
+
+.history-empty { text-align: center; padding: 60px 0; }
+.history-item { border-bottom: 1px solid #ebeef5; padding: 12px 0; }
+.history-item-main { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.history-item-left { display: flex; align-items: center; flex: 1; gap: 8px; }
+.history-item-info { flex: 1; }
+.history-item-date { font-size: 13px; color: #303133; }
+.history-item-meta { display: flex; gap: 4px; margin-top: 4px; }
+.history-item-score { font-size: 20px; font-weight: bold; min-width: 60px; text-align: right; }
+.history-item-detail { padding: 12px 0 4px 32px; }
+.history-dim-row { display: flex; align-items: center; margin: 6px 0; font-size: 13px; }
+.compare-score { font-size: 36px; font-weight: bold; text-align: center; padding: 8px 0; }
+.compare-dim { display: flex; justify-content: space-between; font-size: 13px; margin: 4px 0; padding: 2px 8px; }
 </style>
