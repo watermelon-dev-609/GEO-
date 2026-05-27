@@ -134,6 +134,20 @@
           <div v-if="streamText" class="stream-output">{{ streamText }}</div>
         </div>
 
+        <!-- 平台对比摘要 -->
+        <div v-if="results.length > 1" class="platform-compare">
+          <el-table :data="results" size="small" stripe>
+            <el-table-column prop="platform" label="平台" width="100" />
+            <el-table-column prop="word_count" label="字数" width="80" align="right" />
+            <el-table-column label="优化策略" min-width="200">
+              <template #default="scope">
+                <span style="font-size:12px;color:#606266;">{{ scope.row.strategy_notes?.substring(0, 60) }}{{ scope.row.strategy_notes?.length > 60 ? '...' : '' }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-divider />
+        </div>
+
         <el-tabs v-model="activeTab" v-if="results.length > 0">
           <el-tab-pane
             v-for="r in results"
@@ -450,4 +464,5 @@ function goToEvaluate() {
 .config-hint { font-size: 13px; color: #909399; }
 .config-hint ul { padding-left: 18px; margin-top: 4px; }
 .config-hint li { margin: 2px 0; }
+.platform-compare { margin-bottom: 16px; }
 </style>

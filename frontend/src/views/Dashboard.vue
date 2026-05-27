@@ -110,6 +110,50 @@
       </el-col>
     </el-row>
 
+    <!-- 全域覆盖矩阵 -->
+    <el-row :gutter="20" style="margin-top: 24px;">
+      <el-col :span="24">
+        <el-card shadow="never">
+          <template #header>
+            <div class="card-header">
+              <span>全域覆盖矩阵</span>
+              <span style="font-size:12px;color:#909399;">
+                已优化 {{ optimizedPlatformCount }}/7 平台
+                <span v-if="currentSandtable" style="margin-left:8px;">| 当前沙盘: {{ currentSandtable }}</span>
+              </span>
+            </div>
+          </template>
+          <div class="coverage-matrix">
+            <div class="matrix-header">
+              <span class="matrix-label">平台</span>
+              <span v-for="p in allPlatforms" :key="p.value" class="matrix-col-header" :class="{ configured: isPlatformConfigured(p.value) }">
+                {{ p.label }}
+              </span>
+            </div>
+            <div class="matrix-row">
+              <span class="matrix-label">优化状态</span>
+              <span v-for="p in allPlatforms" :key="p.value" class="matrix-cell">
+                <el-tag v-if="isPlatformOptimized(p.value)" type="success" size="small" effect="dark">已优化</el-tag>
+                <el-tag v-else-if="isPlatformConfigured(p.value)" type="warning" size="small">可优化</el-tag>
+                <el-tag v-else type="info" size="small">未配置</el-tag>
+              </span>
+            </div>
+            <div class="matrix-row">
+              <span class="matrix-label">详情</span>
+              <span v-for="p in allPlatforms" :key="p.value" class="matrix-cell">
+                <template v-if="getPlatformResult(p.value)">
+                  <span style="font-size:12px;color:#606266;">{{ getPlatformResult(p.value).word_count }}字</span>
+                </template>
+                <template v-else>
+                  <span style="font-size:12px;color:#c0c4cc;">—</span>
+                </template>
+              </span>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <el-card shadow="never" style="margin-top: 24px;" v-if="recentProjects.length > 0">
       <template #header>
         <span>最近项目</span>
@@ -164,6 +208,43 @@ const scoreTrendIcon = computed(() => {
   if (scored.length < 2) return null
   return scored[0].overall_score >= scored[1].overall_score ? 'up' : 'down'
 })
+
+const allPlatforms = [
+  { value: 'wenxin', label: '文心' },
+  { value: 'tongyi', label: '通义' },
+  { value: 'gpt', label: 'GPT' },
+  { value: 'claude', label: 'Claude' },
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'doubao', label: '豆包' },
+  { value: 'yuanbao', label: '元宝' },
+]
+
+const optimizedPlatformCount = computed(() => {
+  const optimized = new Set(store.rewriteResults.map(r => r.platform))
+  return optimized.size
+})
+
+const currentSandtable = computed(() => {
+  const type = store.currentSandtableType
+  const map = {
+    smart_traffic: '智慧交通', smart_city: '智慧城市', smart_industry: '智慧工业',
+    smart_agriculture: '智慧农业', smart_logistics: '智慧物流', military_terrain: '军事地形',
+    digital_multimedia: '数字多媒体', real_estate: '地产/规划/展厅',
+  }
+  return map[type] || ''
+})
+
+function isPlatformConfigured(platform) {
+  return store.llmConfigs.some(c => c.platform === platform && c.configured)
+}
+
+function isPlatformOptimized(platform) {
+  return store.rewriteResults.some(r => r.platform === platform)
+}
+
+function getPlatformResult(platform) {
+  return store.rewriteResults.find(r => r.platform === platform)
+}
 
 async function refreshConfig() {
   try {
@@ -232,4 +313,11 @@ onMounted(async () => {
 .overview-label { font-size: 14px; color: #909399; margin-top: 4px; }
 .overview-trend { font-size: 14px; font-weight: bold; margin-top: 8px; }
 .overview-count { font-size: 13px; color: #909399; margin-top: 4px; }
+.coverage-matrix { overflow-x: auto; }
+.matrix-header, .matrix-row { display: flex; align-items: center; gap: 0; padding: 6px 0; }
+.matrix-header { font-weight: bold; border-bottom: 2px solid #ebeef5; padding-bottom: 10px; }
+.matrix-label { width: 80px; font-size: 13px; color: #606266; flex-shrink: 0; }
+.matrix-col-header { flex: 1; min-width: 70px; text-align: center; font-size: 13px; color: #909399; }
+.matrix-col-header.configured { color: #409EFF; }
+.matrix-cell { flex: 1; min-width: 70px; text-align: center; }
 </style>
