@@ -53,12 +53,6 @@
 
     <!-- API Key 配置弹窗 -->
     <el-dialog v-model="showConfigDialog" title="API Key 配置" width="600px" :destroy-on-close="true" @open="loadConfigForDialog">
-      <el-alert
-        title="配置后需重启后端服务生效"
-        type="warning"
-        :closable="false"
-        style="margin-bottom: 16px;"
-      />
       <el-form label-position="top">
         <div v-for="plat in configPlatforms" :key="plat.platform" class="config-plat-row">
           <div class="config-plat-header">
@@ -160,14 +154,21 @@ async function loadConfigForDialog() {
 }
 
 async function saveApiKey(plat) {
+  if (!plat.apiKey.trim()) {
+    ElMessage.warning('请输入 API Key')
+    return
+  }
   plat._saving = true
   try {
     await axios.post('/api/config/llm/update', {
       platform: plat.platform,
-      api_key: plat.apiKey,
+      api_key: plat.apiKey.trim(),
     })
     plat.configured = true
-    ElMessage.success(`${plat.platform} 配置已保存，请重启后端`)
+    // 刷新全局 LLM 配置状态
+    const res = await getLLMConfig()
+    store.setLLMConfigs(res.data.llm_platforms || [])
+    ElMessage.success(`${plat.platform} 已保存并立即生效`)
     plat.apiKey = ''
   } catch (e) {
     ElMessage.error('保存失败: ' + (e.response?.data?.detail || e.message))

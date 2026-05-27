@@ -167,18 +167,48 @@ async def get_llm_config():
     ).model_dump()
 
 
+# ── API Key 格式校验规则 ──
+KEY_PATTERNS = {
+    "deepseek": {"api_key": r"^sk-[a-zA-Z0-9]{28,}$"},
+    "gpt": {"api_key": r"^sk-(proj-)?[a-zA-Z0-9_-]{28,}$"},
+    "tongyi": {"api_key": r"^sk-[a-zA-Z0-9]{18,}$"},
+    "doubao": {"api_key": r"^[a-zA-Z0-9_-]{20,}$"},
+    "yuanbao": {"api_key": r"^[a-zA-Z0-9_-]{20,}$"},
+    "claude": {"api_key": r"^sk-ant-[a-zA-Z0-9]{30,}$"},
+    "wenxin": {"api_key": r"^[a-zA-Z0-9]{16,}$", "secret_key": r"^[a-zA-Z0-9]{16,}$"},
+}
+
 @app.post("/api/config/llm/update")
 async def update_llm_config(req: dict):
-    """更新LLM平台的API Key"""
+    """更新LLM平台的API Key（格式校验 + 立即生效）"""
+    import re
     import yaml
     from pathlib import Path
 
     platform = req.get("platform", "")
-    api_key = req.get("api_key", "")
-    secret_key = req.get("secret_key", "")
+    api_key = req.get("api_key", "").strip()
+    secret_key = req.get("secret_key", "").strip()
 
     if not platform:
         raise HTTPException(status_code=400, detail="请指定平台")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API Key 不能为空")
+
+    # 格式校验
+    patterns = KEY_PATTERNS.get(platform, {"api_key": r"^[a-zA-Z0-9_-]{16,}$"})
+    if not re.match(patterns["api_key"], api_key):
+        hint = ""
+        if platform in ("deepseek", "gpt", "tongyi"):
+            hint = "，应以 sk- 开头"
+        elif platform == "claude":
+            hint = "，应以 sk-ant- 开头"
+        raise HTTPException(status_code=400, detail=f"API Key 格式不正确{hint}")
+    if "secret_key" in patterns and secret_key and not re.match(patterns["secret_key"], secret_key):
+        raise HTTPException(status_code=400, detail="Secret Key 格式不正确")
+
+    # 检查是否是占位符
+    if "your-" in api_key.lower():
+        raise HTTPException(status_code=400, detail="请替换为真实的 API Key，而非示例占位符")
 
     config_path = BACKEND_DIR / "config" / "api_keys.yaml"
     if not config_path.exists():
@@ -198,7 +228,7 @@ async def update_llm_config(req: dict):
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
 
-    return {"status": "ok", "platform": platform, "message": f"{platform} 配置已更新，请重启后端生效"}
+    return {"status": "ok", "platform": platform, "configured": True, "message": f"{platform} 配置已保存并立即生效"}
 
 
 # ── 启动入口 ──
