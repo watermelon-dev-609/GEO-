@@ -95,6 +95,10 @@
                 />
                 <span v-if="dim.enabled" class="dim-weight">{{ dim.weight }}%</span>
               </div>
+              <div v-if="dimensionConfigs.some(d => d.enabled)" class="weight-summary" :class="{ invalid: !weightValid }">
+                权重合计: {{ weightSum }}%
+                <span v-if="!weightValid" style="color: #F56C6C; margin-left: 4px;">（需为100%）</span>
+              </div>
             </el-form-item>
 
             <!-- 自定义问题 -->
@@ -522,12 +526,7 @@ function onTextSourceChange(val) {
 
 // ── 维度配置变化 ──
 function onDimensionChange() {
-  normalizeWeights()
-}
-function onWeightChange() {
-  normalizeWeights()
-}
-function normalizeWeights() {
+  // 当用户勾选/取消勾选维度时，重新均分权重（这是一次性操作，之后用户可自由调整）
   const enabled = dimensionConfigs.value.filter(d => d.enabled)
   if (enabled.length === 0) return
   const each = Math.floor(100 / enabled.length)
@@ -536,11 +535,24 @@ function normalizeWeights() {
     d.weight = each + (i === enabled.length - 1 ? remainder : 0)
   })
 }
+function onWeightChange() {
+  // 用户自由调整权重，不做强制均分
+  // 只做视觉反馈：总和不是100时高亮提示
+}
+const weightSum = computed(() => {
+  const enabled = dimensionConfigs.value.filter(d => d.enabled)
+  return enabled.reduce((s, d) => s + d.weight, 0)
+})
+const weightValid = computed(() => Math.abs(weightSum.value - 100) <= 1)
 
 // ── 开始评测 ──
 async function startEval() {
   if (!evalText.value) {
     ElMessage.warning('请先输入评测文本')
+    return
+  }
+  if (!weightValid.value && dimensionConfigs.value.some(d => d.enabled)) {
+    ElMessage.warning(`评测维度权重合计需为100%（当前${weightSum.value}%），请调整后再开始`)
     return
   }
 
@@ -786,6 +798,8 @@ function goToExport() {
 
 .dim-row { display: flex; align-items: center; margin-bottom: 8px; }
 .dim-weight { font-size: 13px; color: #909399; width: 40px; text-align: right; }
+.weight-summary { font-size: 13px; color: #67C23A; margin-top: 8px; padding: 4px 8px; background: #f0f9eb; border-radius: 4px; display: inline-block; }
+.weight-summary.invalid { color: #E6A23C; background: #fdf6ec; }
 
 .action-buttons { margin-top: 12px; }
 

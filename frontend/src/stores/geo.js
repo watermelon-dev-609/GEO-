@@ -1,17 +1,29 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+
+const STORAGE_KEY = 'geo_pipeline_state'
+
+function loadFromStorage() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch { return {} }
+}
 
 export const useGeoStore = defineStore('geo', () => {
+  // ── 从 sessionStorage 恢复状态 ──
+  const saved = loadFromStorage()
+
   // ── 当前项目状态 ──
-  const currentStep = ref('import') // import | cleaning | rewrite | evaluate | export
-  const originalText = ref('')
-  const cleanedText = ref('')
-  const currentSandtableType = ref('')
-  const dimensions = ref(null)
-  const rewriteResults = ref([])
-  const evaluationResult = ref(null)
-  const selectedPlatforms = ref([])
-  const projectHistory = ref([])
+  const currentStep = ref(saved.currentStep || 'import')
+  const originalText = ref(saved.originalText || '')
+  const cleanedText = ref(saved.cleanedText || '')
+  const currentSandtableType = ref(saved.currentSandtableType || '')
+  const dimensions = ref(saved.dimensions || null)
+  const rewriteResults = ref(saved.rewriteResults || [])
+  const evaluationResult = ref(saved.evaluationResult || null)
+  const selectedPlatforms = ref(saved.selectedPlatforms || [])
+  const projectHistory = ref(saved.projectHistory || [])
 
   // ── 加载状态 ──
   const isProcessing = ref(false)
@@ -163,6 +175,32 @@ export const useGeoStore = defineStore('geo', () => {
     evaluationResult.value = null
     selectedPlatforms.value = []
   }
+
+  // ── 自动保存到 sessionStorage（防抖）──
+  let _saveTimer = null
+  function _scheduleSave() {
+    clearTimeout(_saveTimer)
+    _saveTimer = setTimeout(() => {
+      try {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+          currentStep: currentStep.value,
+          originalText: originalText.value,
+          cleanedText: cleanedText.value,
+          currentSandtableType: currentSandtableType.value,
+          dimensions: dimensions.value,
+          rewriteResults: rewriteResults.value,
+          evaluationResult: evaluationResult.value,
+          selectedPlatforms: selectedPlatforms.value,
+          projectHistory: projectHistory.value,
+        }))
+      } catch { /* quota exceeded, ignore */ }
+    }, 300)
+  }
+
+  // 监听核心状态变化，自动保存
+  const _watchTargets = [originalText, cleanedText, currentSandtableType,
+    dimensions, rewriteResults, evaluationResult, selectedPlatforms]
+  _watchTargets.forEach(t => watch(t, _scheduleSave, { deep: true }))
 
   return {
     currentStep, originalText, cleanedText, currentSandtableType,

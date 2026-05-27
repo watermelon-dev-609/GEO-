@@ -13,9 +13,14 @@
               </el-select>
             </el-form-item>
             <el-form-item label="目标AI平台">
+              <div v-if="store.configuredPlatforms.length === 0" style="margin-bottom:8px;">
+                <el-alert title="暂未配置任何AI平台，请先在 config/api_keys.yaml 中配置API Key" type="warning" :closable="false" />
+              </div>
               <el-checkbox-group v-model="selectedPlatforms">
                 <el-checkbox v-for="p in availablePlatforms" :key="p.value" :value="p.value" :label="p.value">
                   <span>{{ p.label }}</span>
+                  <el-tag v-if="isPlatformConfigured(p.value)" size="small" type="success" effect="plain" style="margin-left:4px;">已配置</el-tag>
+                  <el-tag v-else size="small" type="danger" effect="plain" style="margin-left:4px;">未配置</el-tag>
                 </el-checkbox>
               </el-checkbox-group>
             </el-form-item>
@@ -33,7 +38,17 @@
             style="width: 100%"
             :disabled="!sourceText || selectedPlatforms.length === 0"
           >
-            {{ isRewriting ? '正在生成...' : '开始GEO优化' }}
+            {{ isRewriting ? rewriteProgressText : '开始GEO优化' }}
+          </el-button>
+
+          <el-button
+            v-if="isRewriting"
+            type="danger"
+            size="default"
+            @click="cancelRewrite"
+            style="width: 100%; margin-top: 8px"
+          >
+            停止生成
           </el-button>
 
           <el-divider />
@@ -84,7 +99,18 @@
         </el-card>
 
         <div v-if="isRewriting" class="streaming-area">
-          <el-alert title="正在生成优化文案..." type="info" :closable="false" />
+          <el-alert :title="rewriteProgressText" type="info" :closable="false" />
+          <div v-if="selectedPlatforms.length > 1" class="batch-progress">
+            <el-progress :percentage="Math.round(batchCompleted / batchTotal * 100)" :stroke-width="12" />
+            <div class="batch-detail">
+              <span v-for="p in selectedPlatforms" :key="p" class="batch-platform" :class="{ done: batchDoneSet.has(p), active: batchCurrent === p }">
+                {{ p }}
+                <el-icon v-if="batchDoneSet.has(p)" color="#67C23A" :size="14"><CircleCheckFilled /></el-icon>
+                <el-icon v-else-if="batchCurrent === p" color="#409EFF" :size="14" class="is-loading"><Loading /></el-icon>
+                <el-icon v-else color="#c0c4cc" :size="14"><Clock /></el-icon>
+              </span>
+            </div>
+          </div>
           <div v-if="streamText" class="stream-output">{{ streamText }}</div>
         </div>
 
@@ -125,7 +151,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
 import { rewriteText, getSandtableProfile } from '../api'
@@ -145,6 +171,21 @@ const sandtableProfile = ref(null)
 const showReoptContext = ref(false)
 const reoptWeakPoints = ref([])
 const reoptSuggestions = ref([])
+
+// ── 取消/进度控制 ──
+const abortController = ref(null)
+const batchCompleted = ref(0)
+const batchTotal = ref(0)
+const batchDoneSet = ref(new Set())
+const batchCurrent = ref('')
+
+const rewriteProgressText = computed(() => {
+  if (!isRewriting.value) return '开始GEO优化'
+  if (selectedPlatforms.value.length > 1) {
+    return `正在生成... (${batchCompleted.value}/${batchTotal.value})`
+  }
+  return '正在生成...'
+})
 
 const sandtableTypes = [
   { value: 'smart_traffic', label: '智慧交通沙盘' },
@@ -183,6 +224,10 @@ onMounted(() => {
   }
 })
 
+function isPlatformConfigured(platformValue) {
+  return store.configuredPlatforms.some(p => p.platform === platformValue)
+}
+
 async function onTypeChange(val) {
   try {
     const res = await getSandtableProfile(val)
@@ -199,17 +244,33 @@ async function startRewrite() {
   isRewriting.value = true
   streamText.value = ''
   results.value = []
+  batchCompleted.value = 0
+  batchTotal.value = selectedPlatforms.value.length
+  batchDoneSet.value = new Set()
+  batchCurrent.value = ''
 
-  // 单平台使用 SSE 流式生成，多平台使用批处理
   if (selectedPlatforms.value.length === 1) {
     await startStreamRewrite(selectedPlatforms.value[0])
   } else {
     await startBatchRewrite()
   }
   isRewriting.value = false
+  abortController.value = null
+}
+
+function cancelRewrite() {
+  if (abortController.value) {
+    abortController.value.abort()
+  }
+  isRewriting.value = false
+  ElMessage.info('已停止生成')
 }
 
 async function startStreamRewrite(platform) {
+  const controller = new AbortController()
+  abortController.value = controller
+  batchCurrent.value = platform
+
   const url = `/api/geo/rewrite/stream`
   const body = {
     cleaned_text: sourceText.value,
@@ -223,6 +284,7 @@ async function startStreamRewrite(platform) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: controller.signal,
     })
 
     const reader = resp.body.getReader()
@@ -254,9 +316,11 @@ async function startStreamRewrite(platform) {
               word_count: chunk.word_count,
             }]
             activeTab.value = platform
+            batchCompleted.value = 1
+            batchDoneSet.value = new Set([platform])
             store.setRewriteResults(results.value)
             store.setSelectedPlatforms(selectedPlatforms.value)
-            ElMessage.success(`流式生成完成（${chunk.word_count} 字）`)
+            ElMessage.success(`优化完成（${chunk.word_count} 字）`)
           } else if (chunk.type === 'error') {
             ElMessage.error('流式生成失败: ' + chunk.message)
           }
@@ -264,37 +328,58 @@ async function startStreamRewrite(platform) {
       }
     }
   } catch (e) {
-    if (!e.response?.data?.detail) {
-      ElMessage.error('流式连接中断: ' + (e.message || '未知错误'))
-    }
+    if (e.name === 'AbortError') return
+    ElMessage.error('流式连接中断: ' + (e.message || '未知错误'))
   }
 }
 
 async function startBatchRewrite() {
-  try {
-    const res = await rewriteText({
-      cleaned_text: sourceText.value,
-      sandtable_type: sandtableType.value,
-      platforms: selectedPlatforms.value,
-      dimensions: store.dimensions,
-    })
+  // 逐个平台请求，每个都可感知进度
+  const allPlatforms = [...selectedPlatforms.value]
+  const allResults = []
+  let successCount = 0
 
-    results.value = res.data.results || []
-    activeTab.value = results.value[0]?.platform || ''
+  for (const platform of allPlatforms) {
+    if (abortController.value?.signal?.aborted) break
+    batchCurrent.value = platform
 
-    store.setRewriteResults(results.value)
-    store.setSelectedPlatforms(selectedPlatforms.value)
+    try {
+      const res = await rewriteText({
+        cleaned_text: sourceText.value,
+        sandtable_type: sandtableType.value,
+        platforms: [platform],
+        dimensions: store.dimensions,
+      })
 
-    const successCount = results.value.filter(r => r.optimized_text).length
-    ElMessage.success(`优化完成！${successCount}/${results.value.length} 个平台生成成功`)
+      const platformResult = res.data.results?.[0]
+      if (platformResult?.optimized_text) {
+        allResults.push(platformResult)
+        successCount++
+      }
+    } catch (e) {
+      if (e.name === 'AbortError' || e.code === 'ERR_CANCELED') break
+      // 单个平台失败不影响其他平台
+    }
 
+    batchCompleted.value++
+    batchDoneSet.value = new Set([...batchDoneSet.value, platform])
+  }
+
+  results.value = allResults
+  if (allResults.length > 0) {
+    activeTab.value = allResults[0]?.platform || ''
+  }
+
+  store.setRewriteResults(results.value)
+  store.setSelectedPlatforms(selectedPlatforms.value)
+
+  if (successCount > 0) {
+    ElMessage.success(`优化完成！${successCount}/${allPlatforms.length} 个平台生成成功`)
     store.addToHistory({
       name: 'GEO优化',
       sandtableType: sandtableType.value,
       status: `已优化 (${successCount}平台)`,
     })
-  } catch (e) {
-    ElMessage.error('优化失败: ' + (e.response?.data?.detail || e.message))
   }
 }
 
@@ -318,6 +403,11 @@ function goToEvaluate() {
 .empty-state { text-align: center; color: #909399; padding: 60px 0; }
 .empty-state h3 { margin: 16px 0 8px; color: #606266; }
 .streaming-area { margin-bottom: 16px; }
+.batch-progress { margin: 12px 0; }
+.batch-detail { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.batch-platform { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px; font-size: 13px; background: #f5f7fa; border: 1px solid #ebeef5; }
+.batch-platform.done { background: #f0f9eb; border-color: #c2e7b0; color: #67C23A; }
+.batch-platform.active { background: #ecf5ff; border-color: #b3d8ff; color: #409EFF; }
 .stream-output { background: #1d1e2c; color: #e5e5e5; padding: 16px; border-radius: 8px; margin-top: 12px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; font-size: 13px; line-height: 1.8; }
 .result-text { white-space: pre-wrap; line-height: 1.8; font-size: 14px; max-height: 500px; overflow-y: auto; }
 .result-meta { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
