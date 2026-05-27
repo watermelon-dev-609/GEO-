@@ -212,11 +212,11 @@ const scoreTrendIcon = computed(() => {
 const allPlatforms = [
   { value: 'wenxin', label: '文心' },
   { value: 'tongyi', label: '通义' },
-  { value: 'gpt', label: 'GPT' },
-  { value: 'claude', label: 'Claude' },
   { value: 'deepseek', label: 'DeepSeek' },
   { value: 'doubao', label: '豆包' },
   { value: 'yuanbao', label: '元宝' },
+  { value: 'kimi', label: 'Kimi' },
+  { value: 'xinghuo', label: '星火' },
 ]
 
 const optimizedPlatformCount = computed(() => {

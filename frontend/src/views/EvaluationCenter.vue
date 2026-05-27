@@ -493,13 +493,13 @@ const sandtableTypes = [
   { value: 'real_estate', label: '地产/规划/展厅沙盘' },
 ]
 const availablePlatforms = [
-  { value: 'deepseek', label: 'DeepSeek' },
   { value: 'wenxin', label: '文心一言' },
   { value: 'tongyi', label: '通义千问' },
-  { value: 'gpt', label: 'GPT' },
-  { value: 'claude', label: 'Claude' },
+  { value: 'deepseek', label: 'DeepSeek' },
   { value: 'doubao', label: '字节豆包' },
   { value: 'yuanbao', label: '腾讯元宝' },
+  { value: 'kimi', label: 'Kimi' },
+  { value: 'xinghuo', label: '讯飞星火' },
 ]
 const roleOptions = [
   { value: 'b_end_procurement', label: 'B端政企采购' },

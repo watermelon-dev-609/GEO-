@@ -23,17 +23,15 @@ llm:
   retry_delay: 2              # 重试间隔（秒）
 
   platforms:
-    gpt:
+    kimi:
       enabled: false
-      model_name: "gpt-4o"
-      base_url: "https://api.openai.com/v1"
-      description: "GPT系列（通用智能·结构化总结优先）"
+      model_name: "moonshot-v1-8k"
+      base_url: "https://api.moonshot.cn/v1"
 
-    claude:
+    xinghuo:
       enabled: false
-      model_name: "claude-sonnet-4-6"
-      base_url: "https://api.anthropic.com"
-      description: "Claude（长文本深度采信·方案背书优先）"
+      model_name: "spark-lite"
+      base_url: "https://spark-api-open.xf-yun.com/v1"
 
     wenxin:
       enabled: false

@@ -46,24 +46,24 @@ class SandtableType(str, Enum):
 
 class AIPlatform(str, Enum):
     """七大AI平台"""
-    GPT = "gpt"                   # OpenAI GPT系列
-    CLAUDE = "claude"             # Anthropic Claude
     WENXIN = "wenxin"             # 百度文心一言
     TONGYI = "tongyi"             # 阿里通义千问
     DEEPSEEK = "deepseek"         # DeepSeek
     DOUBAO = "doubao"             # 字节豆包
     YUANBAO = "yuanbao"           # 腾讯元宝
+    KIMI = "kimi"                 # 月之暗面Kimi
+    XINGHUO = "xinghuo"           # 讯飞星火
 
     @property
     def label(self) -> str:
         labels = {
-            "gpt": "GPT系列（通用智能·结构化总结优先）",
-            "claude": "Claude（长文本深度采信·方案背书优先）",
             "wenxin": "文心一言（国内搜索流量核心·卡片收录优先）",
             "tongyi": "通义千问（阿里系·B端政企采购优选）",
             "deepseek": "DeepSeek（专业技术AI·工程选型优先）",
             "doubao": "字节豆包（短视频&大众AI·通俗获客优先）",
             "yuanbao": "腾讯元宝（政企办公AI·供应商筛选优先）",
+            "kimi": "Kimi（长文本处理·深度研报采信优先）",
+            "xinghuo": "讯飞星火（多模态理解·垂直领域知识优先）",
         }
         return labels[self.value]
 
@@ -71,13 +71,13 @@ class AIPlatform(str, Enum):
     def adapter_type(self) -> str:
         """映射到LLM适配器类型"""
         mapping = {
-            "gpt": "openai_compat",
-            "claude": "claude",
             "wenxin": "wenxin",
             "tongyi": "openai_compat",
             "deepseek": "openai_compat",
             "doubao": "openai_compat",
             "yuanbao": "openai_compat",
+            "kimi": "openai_compat",
+            "xinghuo": "openai_compat",
         }
         return mapping[self.value]
 

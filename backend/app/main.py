@@ -170,12 +170,12 @@ async def get_llm_config():
 # ── API Key 格式校验规则 ──
 KEY_PATTERNS = {
     "deepseek": {"api_key": r"^sk-[a-zA-Z0-9]{28,}$"},
-    "gpt": {"api_key": r"^sk-(proj-)?[a-zA-Z0-9_-]{28,}$"},
     "tongyi": {"api_key": r"^sk-[a-zA-Z0-9]{18,}$"},
     "doubao": {"api_key": r"^[a-zA-Z0-9_-]{20,}$"},
     "yuanbao": {"api_key": r"^[a-zA-Z0-9_-]{20,}$"},
-    "claude": {"api_key": r"^sk-ant-[a-zA-Z0-9]{30,}$"},
     "wenxin": {"api_key": r"^[a-zA-Z0-9]{16,}$", "secret_key": r"^[a-zA-Z0-9]{16,}$"},
+    "kimi": {"api_key": r"^sk-[a-zA-Z0-9]{28,}$"},
+    "xinghuo": {"api_key": r"^[a-zA-Z0-9_-]{20,}$"},
 }
 
 @app.post("/api/config/llm/update")
@@ -198,10 +198,8 @@ async def update_llm_config(req: dict):
     patterns = KEY_PATTERNS.get(platform, {"api_key": r"^[a-zA-Z0-9_-]{16,}$"})
     if not re.match(patterns["api_key"], api_key):
         hint = ""
-        if platform in ("deepseek", "gpt", "tongyi"):
+        if platform in ("deepseek", "tongyi", "kimi"):
             hint = "，应以 sk- 开头"
-        elif platform == "claude":
-            hint = "，应以 sk-ant- 开头"
         raise HTTPException(status_code=400, detail=f"API Key 格式不正确{hint}")
     if "secret_key" in patterns and secret_key and not re.match(patterns["secret_key"], secret_key):
         raise HTTPException(status_code=400, detail="Secret Key 格式不正确")

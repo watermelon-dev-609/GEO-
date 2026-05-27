@@ -239,11 +239,11 @@ const sandtableTypes = [
 const availablePlatforms = [
   { value: 'wenxin', label: '文心一言' },
   { value: 'tongyi', label: '通义千问' },
-  { value: 'gpt', label: 'GPT' },
-  { value: 'claude', label: 'Claude' },
   { value: 'deepseek', label: 'DeepSeek' },
   { value: 'doubao', label: '字节豆包' },
   { value: 'yuanbao', label: '腾讯元宝' },
+  { value: 'kimi', label: 'Kimi' },
+  { value: 'xinghuo', label: '讯飞星火' },
 ]
 
 onMounted(() => {
