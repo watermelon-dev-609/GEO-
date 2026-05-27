@@ -327,10 +327,17 @@ def build_geo_prompt(
 
     user_message = f"请为{profile['industry']}业务撰写适配{rules['name']}的优化文案。"
 
-    # 注入评测优化建议
+    # 注入评测优化建议 — 追加到 system_prompt 末尾确保 LLM 强制执行
     if optimization_hints:
-        hints_text = "\n".join(f"- {h}" for h in optimization_hints)
-        user_message += f"\n\n## 重点优化方向（根据AI评测结果）\n请特别关注以下改进点：\n{hints_text}"
+        hints_text = "\n".join(f"{i+1}. {h}" for i, h in enumerate(optimization_hints))
+        system_prompt += f"""
+
+## 🔴 重点优化指令（必须执行）
+以下要求来自上一次AI评测的诊断结果，**必须**在本次生成的文案中针对性改进。不得忽略：
+
+{hints_text}
+
+请在生成文案时逐条检查以上每项是否已落实。"""
 
     return system_prompt, user_message
 
