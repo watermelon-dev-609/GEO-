@@ -79,13 +79,33 @@
           </el-alert>
           <el-alert
             v-if="reoptSuggestions.length > 0"
-            title="优化建议"
+            title="迭代优化建议（点击「采纳」将自动带入优化指令）"
             type="success"
             :closable="false"
             style="margin-top: 8px;"
           >
-            <div v-for="(sg, i) in reoptSuggestions" :key="'sg-'+i" style="margin: 2px 0; font-size: 13px;">
-              - {{ sg }}
+            <div
+              v-for="(sg, i) in reoptSuggestions"
+              :key="'sg-'+i"
+              class="suggestion-row"
+              :class="{ adopted: adoptedHints.includes(sg) }"
+            >
+              <span class="suggestion-text">- {{ sg }}</span>
+              <el-button
+                v-if="!adoptedHints.includes(sg)"
+                size="small"
+                type="success"
+                @click="adoptHint(sg)"
+              >采纳</el-button>
+              <el-button
+                v-else
+                size="small"
+                type="danger"
+                @click="removeHint(sg)"
+              >取消</el-button>
+            </div>
+            <div v-if="adoptedHints.length > 0" class="adopted-summary">
+              已采纳 {{ adoptedHints.length }} 条建议，将在优化时作为重点改进方向
             </div>
           </el-alert>
         </div>
@@ -171,6 +191,10 @@ const sandtableProfile = ref(null)
 const showReoptContext = ref(false)
 const reoptWeakPoints = ref([])
 const reoptSuggestions = ref([])
+const adoptedHints = ref([])
+
+function adoptHint(sg) { adoptedHints.value.push(sg) }
+function removeHint(sg) { adoptedHints.value = adoptedHints.value.filter(h => h !== sg) }
 
 // ── 取消/进度控制 ──
 const abortController = ref(null)
@@ -277,6 +301,7 @@ async function startStreamRewrite(platform) {
     sandtable_type: sandtableType.value,
     platforms: [platform],
     dimensions: store.dimensions,
+    optimization_hints: adoptedHints.value,
   }
 
   try {
@@ -349,6 +374,7 @@ async function startBatchRewrite() {
         sandtable_type: sandtableType.value,
         platforms: [platform],
         dimensions: store.dimensions,
+        optimization_hints: adoptedHints.value,
       })
 
       const platformResult = res.data.results?.[0]
@@ -412,6 +438,10 @@ function goToEvaluate() {
 .result-text { white-space: pre-wrap; line-height: 1.8; font-size: 14px; max-height: 500px; overflow-y: auto; }
 .result-meta { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
 .strategy-notes { white-space: normal; line-height: 1.8; font-size: 13px; }
+.suggestion-row { display: flex; align-items: center; justify-content: space-between; margin: 4px 0; padding: 4px 8px; border-radius: 4px; transition: background 0.2s; }
+.suggestion-row.adopted { background: #e1f3d8; }
+.suggestion-text { flex: 1; font-size: 13px; margin-right: 8px; }
+.adopted-summary { margin-top: 8px; padding: 6px 10px; background: #e1f3d8; border-radius: 4px; font-size: 13px; color: #67C23A; font-weight: bold; }
 .config-hint { font-size: 13px; color: #909399; }
 .config-hint ul { padding-left: 18px; margin-top: 4px; }
 .config-hint li { margin: 2px 0; }

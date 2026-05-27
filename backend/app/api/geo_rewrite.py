@@ -23,6 +23,7 @@ async def rewrite_text(req: RewriteRequest):
             sandtable_type=req.sandtable_type,
             platforms=req.platforms,
             dimensions=req.dimensions,
+            optimization_hints=req.optimization_hints or None,
             enterprise_name=req.enterprise_name,
             enterprise_location=req.enterprise_location,
         )
@@ -54,6 +55,7 @@ async def rewrite_stream(req: RewriteRequest):
                     sandtable_type=req.sandtable_type,
                     platform=platform,
                     dimensions=req.dimensions,
+                    optimization_hints=req.optimization_hints or None,
                     enterprise_name=req.enterprise_name,
                     enterprise_location=req.enterprise_location,
                 ):

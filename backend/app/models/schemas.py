@@ -59,6 +59,7 @@ class RewriteRequest(BaseModel):
     sandtable_type: SandtableType = Field(..., description="沙盘业务类型")
     platforms: list[AIPlatform] = Field(..., description="目标AI平台列表")
     dimensions: Optional[dict] = Field(default=None, description="五维信息（可选，用于强化）")
+    optimization_hints: list[str] = Field(default_factory=list, description="优化提示（如评测建议）")
     enterprise_name: str = Field(default="武汉微艺达智能科技有限公司")
     enterprise_location: str = Field(default="武汉")
 

@@ -58,6 +58,7 @@ class GEORewriter:
         sandtable_type: SandtableType,
         platforms: list[AIPlatform],
         dimensions: dict | None = None,
+        optimization_hints: list[str] | None = None,
         enterprise_name: str = "武汉微艺达智能科技有限公司",
         enterprise_location: str = "武汉",
     ) -> list[PlatformRewriteResult]:
@@ -73,7 +74,7 @@ class GEORewriter:
             else:
                 tasks.append(self._rewrite_one(
                     cleaned_text, sandtable_type, platform,
-                    dimensions, enterprise_name, enterprise_location, cache_key,
+                    dimensions, optimization_hints, enterprise_name, enterprise_location, cache_key,
                 ))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -99,6 +100,7 @@ class GEORewriter:
         sandtable_type: SandtableType,
         platform: AIPlatform,
         dimensions: dict | None,
+        optimization_hints: list[str] | None,
         enterprise_name: str,
         enterprise_location: str,
         cache_key: str,
@@ -120,6 +122,7 @@ class GEORewriter:
             enterprise_name=enterprise_name,
             enterprise_location=enterprise_location,
             dimensions=dimensions,
+            optimization_hints=optimization_hints,
         )
 
         # 五维信息也补充到user_message中
@@ -163,6 +166,7 @@ class GEORewriter:
         sandtable_type: SandtableType,
         platform: AIPlatform,
         dimensions: dict | None = None,
+        optimization_hints: list[str] | None = None,
         enterprise_name: str = "武汉微艺达智能科技有限公司",
         enterprise_location: str = "武汉",
     ) -> AsyncIterator[dict]:
@@ -175,6 +179,7 @@ class GEORewriter:
             enterprise_name=enterprise_name,
             enterprise_location=enterprise_location,
             dimensions=dimensions,
+            optimization_hints=optimization_hints,
         )
 
         dims_text = ""

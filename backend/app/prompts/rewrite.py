@@ -218,6 +218,7 @@ def build_geo_prompt(
     enterprise_name: str = "武汉微艺达智能科技有限公司",
     enterprise_location: str = "武汉",
     dimensions: dict | None = None,
+    optimization_hints: list[str] | None = None,
 ) -> tuple[str, str]:
     """构建指定沙盘类型×平台的GEO优化Prompt
 
@@ -263,6 +264,11 @@ def build_geo_prompt(
     )
 
     user_message = f"请为{profile['industry']}业务撰写适配{rules['name']}的优化文案。"
+
+    # 注入评测优化建议
+    if optimization_hints:
+        hints_text = "\n".join(f"- {h}" for h in optimization_hints)
+        user_message += f"\n\n## 重点优化方向（根据AI评测结果）\n请特别关注以下改进点：\n{hints_text}"
 
     return system_prompt, user_message
 
