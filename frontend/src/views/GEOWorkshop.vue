@@ -50,6 +50,31 @@
       </el-col>
 
       <el-col :span="16">
+        <!-- 重优化诊断上下文 -->
+        <div v-if="showReoptContext" style="margin-bottom: 16px;">
+          <el-alert
+            title="评测诊断结果 — 请根据以下诊断针对性优化文案"
+            type="warning"
+            :closable="true"
+            @close="showReoptContext = false"
+          >
+            <div v-for="(wp, i) in reoptWeakPoints" :key="'wp-'+i" style="margin: 4px 0; font-size: 13px;">
+              - {{ wp }}
+            </div>
+          </el-alert>
+          <el-alert
+            v-if="reoptSuggestions.length > 0"
+            title="优化建议"
+            type="success"
+            :closable="false"
+            style="margin-top: 8px;"
+          >
+            <div v-for="(sg, i) in reoptSuggestions" :key="'sg-'+i" style="margin: 2px 0; font-size: 13px;">
+              - {{ sg }}
+            </div>
+          </el-alert>
+        </div>
+
         <el-card shadow="never" v-if="results.length === 0 && !isRewriting" class="empty-card">
           <div class="empty-state">
             <el-icon :size="64" color="#c0c4cc"><EditPen /></el-icon>
@@ -117,6 +142,9 @@ const streamText = ref('')
 const results = ref([])
 const activeTab = ref('')
 const sandtableProfile = ref(null)
+const showReoptContext = ref(false)
+const reoptWeakPoints = ref([])
+const reoptSuggestions = ref([])
 
 const sandtableTypes = [
   { value: 'smart_traffic', label: '智慧交通沙盘' },
@@ -142,6 +170,17 @@ const availablePlatforms = [
 onMounted(() => {
   sourceText.value = store.cleanedText
   if (store.currentSandtableType) sandtableType.value = store.currentSandtableType
+
+  // 检测从评测中心传入的重优化上下文
+  if (store.reoptimizeContext) {
+    const ctx = store.reoptimizeContext
+    if (ctx.sourceText) sourceText.value = ctx.sourceText
+    if (ctx.sandtableType) sandtableType.value = ctx.sandtableType
+    if (ctx.weakPoints?.length) reoptWeakPoints.value = ctx.weakPoints
+    if (ctx.suggestions?.length) reoptSuggestions.value = ctx.suggestions
+    showReoptContext.value = true
+    store.clearReoptimizeContext()
+  }
 })
 
 async function onTypeChange(val) {
