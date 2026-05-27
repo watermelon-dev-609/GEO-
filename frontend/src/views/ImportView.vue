@@ -20,13 +20,13 @@
                 drag
                 :auto-upload="false"
                 :on-change="handleFileChange"
-                accept=".txt,.md,.docx,.xlsx"
+                accept=".txt,.md,.docx"
                 :limit="5"
               >
                 <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
                 <div>将文件拖到此处，或点击上传</div>
                 <template #tip>
-                  <div class="el-upload__tip">支持 .txt .md .docx .xlsx 格式</div>
+                  <div class="el-upload__tip">支持 .txt .md .docx 格式</div>
                 </template>
               </el-upload>
               <div v-if="fileContent" class="file-preview">
@@ -151,13 +151,32 @@ const dimList = [
   { key: 'implementation_value', label: '落地价值' },
 ]
 
-function handleFileChange(file) {
+async function handleFileChange(file) {
+  const raw = file.raw
+  const ext = raw.name.split('.').pop()?.toLowerCase()
+
+  if (ext === 'docx') {
+    try {
+      const mammoth = await import('mammoth')
+      const arrayBuffer = await raw.arrayBuffer()
+      const result = await mammoth.extractRawText({ arrayBuffer })
+      fileContent.value = result.value
+      rawText.value = result.value
+      if (result.messages?.length) {
+        ElMessage.info('Word文档已解析，部分格式可能已简化')
+      }
+    } catch (e) {
+      ElMessage.error('Word文档解析失败: ' + (e.message || '未知错误'))
+    }
+    return
+  }
+
   const reader = new FileReader()
   reader.onload = (e) => {
     fileContent.value = e.target.result
     rawText.value = e.target.result
   }
-  reader.readAsText(file.raw)
+  reader.readAsText(raw)
 }
 
 async function startCleaning() {

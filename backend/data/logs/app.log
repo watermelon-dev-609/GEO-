@@ -91,3 +91,49 @@ ModuleNotFoundError("No module named 'faiss.swigfaiss_avx2'")
 2026-05-27 09:53:06 [INFO] app.services.vector_store - 使用 Python I/O 写入 FAISS 索引: C:\Users\Administrator\.geo-optimizer\vectors\evaluation_faiss.index
 2026-05-27 09:53:06 [INFO] app.services.vector_store - 向量存储[evaluation] 已持久化 (记录数: 1)
 2026-05-27 09:54:27 [WARNING] app.core.reporter - PDF生成失败: cannot load library 'libpango-1.0-0': error 0x7e.  Additionally, ctypes.util.find_library() did not manage to locate a library called 'libpango-1.0-0'
+2026-05-27 10:54:01 [INFO] app.main - 正在预加载向量模型（首次运行可能需下载约1.3GB模型文件）...
+2026-05-27 10:54:01 [INFO] app.services.embedding_svc - 加载 Embedding 模型: BAAI/bge-large-zh-v1.5 → C:\Users\Administrator\Desktop\GEO生成式搜索优化轻量化技术方案\geo-optimizer\backend\data\cache\models\BAAI\bge-large-zh-v1.5 (device=cpu)
+2026-05-27 10:54:17 [INFO] numexpr.utils - Note: NumExpr detected 24 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+2026-05-27 10:54:17 [INFO] numexpr.utils - NumExpr defaulting to 16 threads.
+2026-05-27 10:54:40 [INFO] app.services.embedding_svc - Embedding 模型加载完成（离线模式）
+2026-05-27 10:54:40 [INFO] app.services.embedding_svc - Embedding 模型加载完成
+2026-05-27 10:54:40 [INFO] app.main - 向量模型就绪，AI评测功能可用
+2026-05-27 10:54:40 [INFO] app.main - 已加载 0 条评测历史记录
+2026-05-27 11:28:32 [INFO] app.main - 正在预加载向量模型（首次运行可能需下载约1.3GB模型文件）...
+2026-05-27 11:28:32 [INFO] app.services.embedding_svc - 加载 Embedding 模型: BAAI/bge-large-zh-v1.5 → C:\Users\Administrator\Desktop\GEO生成式搜索优化轻量化技术方案\geo-optimizer\backend\data\cache\models\BAAI\bge-large-zh-v1.5 (device=cpu)
+2026-05-27 11:28:36 [INFO] numexpr.utils - Note: NumExpr detected 24 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+2026-05-27 11:28:36 [INFO] numexpr.utils - NumExpr defaulting to 16 threads.
+2026-05-27 11:28:43 [INFO] app.services.embedding_svc - Embedding 模型加载完成（离线模式）
+2026-05-27 11:28:43 [INFO] app.services.embedding_svc - Embedding 模型加载完成
+2026-05-27 11:28:43 [INFO] app.main - 向量模型就绪，AI评测功能可用
+2026-05-27 11:28:43 [INFO] app.main - 已加载 0 条评测历史记录
+2026-05-27 11:32:03 [INFO] faiss.loader - Loading faiss with AVX2 support.
+2026-05-27 11:32:03 [INFO] faiss.loader - Could not load library with AVX2 support due to:
+ModuleNotFoundError("No module named 'faiss.swigfaiss_avx2'")
+2026-05-27 11:32:03 [INFO] faiss.loader - Loading faiss.
+2026-05-27 11:32:03 [INFO] faiss.loader - Successfully loaded faiss.
+2026-05-27 11:32:07 [INFO] app.services.vector_store - 向量存储[evaluation] 已添加 2 条记录 (总计: 2)
+2026-05-27 11:32:07 [INFO] app.services.vector_store - 使用 Python I/O 写入 FAISS 索引: C:\Users\Administrator\.geo-optimizer\vectors\evaluation_faiss.index
+2026-05-27 11:32:07 [INFO] app.services.vector_store - 向量存储[evaluation] 已持久化 (记录数: 2)
+2026-05-27 11:32:57 [INFO] app.core.eval_history_store - 评测历史已保存: C:\Users\Administrator\Desktop\GEO生成式搜索优化轻量化技术方案\geo-optimizer\backend\data\evaluations\c5cf5823c630.json
+2026-05-27 11:34:02 [INFO] app.services.vector_store - 向量存储[evaluation] 已添加 2 条记录 (总计: 2)
+2026-05-27 11:34:02 [INFO] app.services.vector_store - 使用 Python I/O 写入 FAISS 索引: C:\Users\Administrator\.geo-optimizer\vectors\evaluation_faiss.index
+2026-05-27 11:34:02 [INFO] app.services.vector_store - 向量存储[evaluation] 已持久化 (记录数: 2)
+2026-05-27 11:34:13 [INFO] app.core.eval_history_store - 评测历史已保存: C:\Users\Administrator\Desktop\GEO生成式搜索优化轻量化技术方案\geo-optimizer\backend\data\evaluations\db82cba772f3.json
+2026-05-27 13:04:00 [INFO] app.main - 正在预加载向量模型（首次运行可能需下载约1.3GB模型文件）...
+2026-05-27 13:04:00 [INFO] app.services.embedding_svc - 加载 Embedding 模型: BAAI/bge-large-zh-v1.5 → C:\Users\Administrator\Desktop\GEO生成式搜索优化轻量化技术方案\geo-optimizer\backend\data\cache\models\BAAI\bge-large-zh-v1.5 (device=cpu)
+2026-05-27 13:04:03 [INFO] numexpr.utils - Note: NumExpr detected 24 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+2026-05-27 13:04:03 [INFO] numexpr.utils - NumExpr defaulting to 16 threads.
+2026-05-27 13:04:07 [INFO] app.services.embedding_svc - Embedding 模型加载完成（离线模式）
+2026-05-27 13:04:07 [INFO] app.services.embedding_svc - Embedding 模型加载完成
+2026-05-27 13:04:07 [INFO] app.main - 向量模型就绪，AI评测功能可用
+2026-05-27 13:04:07 [INFO] app.main - 已加载 2 条评测历史记录
+2026-05-27 13:08:56 [INFO] faiss.loader - Loading faiss with AVX2 support.
+2026-05-27 13:08:56 [INFO] faiss.loader - Could not load library with AVX2 support due to:
+ModuleNotFoundError("No module named 'faiss.swigfaiss_avx2'")
+2026-05-27 13:08:56 [INFO] faiss.loader - Loading faiss.
+2026-05-27 13:08:56 [INFO] faiss.loader - Successfully loaded faiss.
+2026-05-27 13:08:59 [INFO] app.services.vector_store - 向量存储[evaluation] 已添加 2 条记录 (总计: 2)
+2026-05-27 13:08:59 [INFO] app.services.vector_store - 使用 Python I/O 写入 FAISS 索引: C:\Users\Administrator\.geo-optimizer\vectors\evaluation_faiss.index
+2026-05-27 13:08:59 [INFO] app.services.vector_store - 向量存储[evaluation] 已持久化 (记录数: 2)
+2026-05-27 13:09:33 [INFO] app.core.eval_history_store - 评测历史已保存: C:\Users\Administrator\Desktop\GEO生成式搜索优化轻量化技术方案\geo-optimizer\backend\data\evaluations\854c9ca5eba3.json

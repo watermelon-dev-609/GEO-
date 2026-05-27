@@ -57,7 +57,7 @@ def _setup_logging():
 
 _setup_logging()
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import cleaning, geo_rewrite, jsonld, evaluation, reports
 from app.models.schemas import SystemConfigResponse, LLMConfigStatus
@@ -165,6 +165,40 @@ async def get_llm_config():
         data_dir=str(settings.get("system", {}).get("data_dir", "./data")),
         version="1.0.0-personal",
     ).model_dump()
+
+
+@app.post("/api/config/llm/update")
+async def update_llm_config(req: dict):
+    """更新LLM平台的API Key"""
+    import yaml
+    from pathlib import Path
+
+    platform = req.get("platform", "")
+    api_key = req.get("api_key", "")
+    secret_key = req.get("secret_key", "")
+
+    if not platform:
+        raise HTTPException(status_code=400, detail="请指定平台")
+
+    config_path = BACKEND_DIR / "config" / "api_keys.yaml"
+    if not config_path.exists():
+        raise HTTPException(status_code=500, detail="配置文件 api_keys.yaml 不存在")
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f) or {}
+
+    if "platforms" not in config:
+        config["platforms"] = {}
+    if platform not in config["platforms"]:
+        config["platforms"][platform] = {}
+    config["platforms"][platform]["api_key"] = api_key
+    if secret_key:
+        config["platforms"][platform]["secret_key"] = secret_key
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+
+    return {"status": "ok", "platform": platform, "message": f"{platform} 配置已更新，请重启后端生效"}
 
 
 # ── 启动入口 ──

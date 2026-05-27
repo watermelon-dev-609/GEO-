@@ -11,7 +11,6 @@
             <el-form-item label="导出内容">
               <el-checkbox-group v-model="exportItems">
                 <el-checkbox label="copy" :disabled="!hasCopy">优化文案 (.md)</el-checkbox>
-                <el-checkbox label="docx" :disabled="!hasCopy">优化文案 (.docx)</el-checkbox>
                 <el-checkbox label="jsonld">JSON-LD结构化代码</el-checkbox>
                 <el-checkbox label="report">评测报告 (.html)</el-checkbox>
                 <el-checkbox label="report_pdf">评测报告 (.pdf)</el-checkbox>
@@ -58,9 +57,9 @@
 
           <el-divider />
 
-          <el-button size="small" @click="exportAllZip" style="width: 100%">
-            <el-icon><FolderOpened /></el-icon> 打包全部下载 (ZIP)
-          </el-button>
+          <div class="config-hint" style="margin-top: 8px;">
+            <p>💡 提示：文件将自动下载到浏览器默认下载目录</p>
+          </div>
         </el-card>
       </el-col>
 
@@ -184,12 +183,11 @@ async function startExport() {
 
   try {
     // 1. 导出文案
-    if ((exportItems.value.includes('copy') || exportItems.value.includes('docx')) && store.rewriteResults.length > 0) {
+    if (exportItems.value.includes('copy') && store.rewriteResults.length > 0) {
       for (const r of store.rewriteResults) {
         if (r.optimized_text) {
-          const ext = exportItems.value.includes('docx') ? 'docx' : 'md'
           const blob = new Blob([r.optimized_text], { type: 'text/markdown;charset=utf-8' })
-          const filename = `GEO优化文案_${sandtableType.value}_${r.platform}.${ext}`
+          const filename = `GEO优化文案_${sandtableType.value}_${r.platform}.md`
           saveBlob(blob, filename)
           exportedFiles.value.push({ name: filename, label: `${r.platform}文案`, type: 'copy', size: `${(blob.size / 1024).toFixed(1)} KB` })
         }
@@ -294,8 +292,23 @@ function previewFile(file) {
 function downloadFile(file) {
   if (file.type === 'report' && file.reportId) {
     window.open(`/api/reports/export/${file.reportId}?format=${file.format || 'html'}`, '_blank')
+    return
   }
-  ElMessage.success(`正在下载: ${file.name}`)
+  // 对于 copy 和 jsonld 类型，重新生成 blob 并触发下载
+  if (file.type === 'copy') {
+    const result = store.rewriteResults.find(r => file.name.includes(r.platform))
+    if (result?.optimized_text) {
+      const blob = new Blob([result.optimized_text], { type: 'text/markdown;charset=utf-8' })
+      saveBlob(blob, file.name)
+      return
+    }
+  }
+  if (file.type === 'jsonld' && jsonldCode.value) {
+    const blob = new Blob([jsonldCode.value], { type: 'application/json;charset=utf-8' })
+    saveBlob(blob, file.name)
+    return
+  }
+  ElMessage.warning('无法重新下载此文件，请重新导出')
 }
 
 function copyText(text) {

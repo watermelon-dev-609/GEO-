@@ -44,9 +44,40 @@
             {{ hasConfiguredLLM ? 'LLM已配置' : '待配置LLM' }}
           </el-tag>
         </div>
+        <el-button size="small" text type="primary" @click="showConfigDialog = true" style="width:100%;margin-top:6px;">
+          配置API Key
+        </el-button>
         <div class="version">v1.0.0 Personal</div>
       </div>
     </el-aside>
+
+    <!-- API Key 配置弹窗 -->
+    <el-dialog v-model="showConfigDialog" title="API Key 配置" width="600px" :destroy-on-close="true" @open="loadConfigForDialog">
+      <el-alert
+        title="配置后需重启后端服务生效"
+        type="warning"
+        :closable="false"
+        style="margin-bottom: 16px;"
+      />
+      <el-form label-position="top">
+        <div v-for="plat in configPlatforms" :key="plat.platform" class="config-plat-row">
+          <div class="config-plat-header">
+            <span class="config-plat-name">{{ plat.platform }}</span>
+            <el-tag :type="plat.configured ? 'success' : 'danger'" size="small">{{ plat.configured ? '已配置' : '未配置' }}</el-tag>
+          </div>
+          <el-input
+            v-model="plat.apiKey"
+            type="password"
+            show-password
+            placeholder="输入 API Key"
+            size="small"
+          />
+          <el-button size="small" type="primary" @click="saveApiKey(plat)" style="margin-top:4px;" :loading="plat._saving">
+            保存
+          </el-button>
+        </div>
+      </el-form>
+    </el-dialog>
 
     <el-container>
       <el-header class="topbar">
@@ -75,6 +106,7 @@ import { useRoute } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
 import { getLLMConfig, healthCheck } from '../api'
 import { ElMessage } from 'element-plus'
+import axios from 'axios'
 
 const route = useRoute()
 const store = useGeoStore()
@@ -82,6 +114,38 @@ const store = useGeoStore()
 const activeMenu = computed(() => route.path)
 const currentPageTitle = computed(() => route.meta?.title || '')
 const hasConfiguredLLM = computed(() => store.configuredPlatforms.length > 0)
+
+// ── API Key 配置弹窗 ──
+const showConfigDialog = ref(false)
+const configPlatforms = ref([])
+
+async function loadConfigForDialog() {
+  try {
+    const res = await getLLMConfig()
+    configPlatforms.value = (res.data.llm_platforms || []).map(p => ({
+      ...p,
+      apiKey: '',
+      _saving: false,
+    }))
+  } catch { /* ignore */ }
+}
+
+async function saveApiKey(plat) {
+  plat._saving = true
+  try {
+    await axios.post('/api/config/llm/update', {
+      platform: plat.platform,
+      api_key: plat.apiKey,
+    })
+    plat.configured = true
+    ElMessage.success(`${plat.platform} 配置已保存，请重启后端`)
+    plat.apiKey = ''
+  } catch (e) {
+    ElMessage.error('保存失败: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    plat._saving = false
+  }
+}
 
 onMounted(async () => {
   try {
@@ -129,4 +193,7 @@ async function checkConfig() {
 .topbar { background: #fff; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #ebeef5; padding: 0 24px; height: 56px; }
 .topbar-right { display: flex; gap: 8px; }
 .main-content { background: #f5f7fa; padding: 24px; overflow-y: auto; }
+.config-plat-row { margin-bottom: 16px; padding: 12px; background: #fafafa; border-radius: 8px; border: 1px solid #ebeef5; }
+.config-plat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.config-plat-name { font-weight: bold; font-size: 14px; }
 </style>
