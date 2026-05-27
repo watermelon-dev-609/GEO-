@@ -6,7 +6,7 @@ import logging
 import time
 import numpy as np
 
-from app.models.enums import SandtableType, AIPlatform, UserRole, EvalDimension
+from app.models.enums import SandtableType, AIPlatform, UserRole, EvalDimension, EvalPhase, EvalPhaseStatus
 from app.models.schemas import EvaluationScore, PlatformEvalResult
 from app.services.embedding_svc import EmbeddingService
 from app.services.vector_store import VectorStore
@@ -63,6 +63,19 @@ ROLE_QUESTIONS = {
         "沙盘模型能做成会动的吗？能加灯光和声音吗？",
     ],
 }
+
+
+def _sse_event(event: str, session_id: str, phase: str, data: dict, progress: float) -> str:
+    """生成SSE事件字符串"""
+    import json
+    payload = {
+        "session_id": session_id,
+        "event": event,
+        "phase": phase,
+        "data": data,
+        "progress": progress,
+    }
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 class AIEvaluator:
@@ -336,6 +349,244 @@ class AIEvaluator:
             suggestions.append("建议：将核心优势以独立段落呈现，确保每条优势有具体数据和案例支撑")
 
         if not weak_points:
+            weak_points.append("各项指标表现良好，暂无明显短板")
+            suggestions.append("建议：持续监控AI平台算法更新，定期迭代优化文案")
+
+        return weak_points, suggestions
+
+    async def evaluate_stream(
+        self,
+        session: "EvalSession",
+        optimized_text: str,
+        sandtable_type: SandtableType,
+        dimension_configs: list,
+        original_text: str | None = None,
+        user_roles: list[UserRole] | None = None,
+        custom_questions: list[str] | None = None,
+    ):
+        """分阶段流式评测 — async generator，逐阶段 yield SSE 数据"""
+        from app.core.eval_dimensions import DimensionRegistry
+
+        user_roles = user_roles or list(UserRole)
+        phase_order = DimensionRegistry.get_phases_from_configs(dimension_configs)
+        phase_order.sort(key=lambda p: p.order)
+
+        enabled_keys = {c["key"] if isinstance(c, dict) else c.key for c in dimension_configs if (c.get("enabled", True) if isinstance(c, dict) else c.enabled)}
+        weight_map = {c["key"] if isinstance(c, dict) else c.key: c.get("weight", 20.0) if isinstance(c, dict) else c.weight for c in dimension_configs if (c.get("enabled", True) if isinstance(c, dict) else c.enabled)}
+
+        total_w = sum(weight_map.values())
+        if total_w > 0:
+            weight_map = {k: v / total_w for k, v in weight_map.items()}
+
+        questions = []
+        brand_result = None
+        solution_result = None
+        advantage_result = None
+        structure_result = None
+        differentiation_result = None
+
+        for phase in phase_order:
+            if session.cancelled:
+                session.skip_phase(phase)
+                yield _sse_event("phase_skipped", session.session_id, phase.value,
+                                 {"reason": "cancelled"}, session.overall_progress)
+                continue
+
+            session.start_phase(phase)
+
+            try:
+                if phase == EvalPhase.GENERATING_QUESTIONS:
+                    questions = self._generate_questions(sandtable_type, user_roles, custom_questions or [])
+                    result = {"questions": questions, "count": len(questions)}
+                    session.complete_phase(phase, result)
+                    yield _sse_event("phase_complete", session.session_id, phase.value,
+                                     result, session.overall_progress)
+
+                elif phase == EvalPhase.BRAND_RECALL:
+                    if "brand_recall" not in enabled_keys:
+                        session.skip_phase(phase)
+                        yield _sse_event("phase_skipped", session.session_id, phase.value,
+                                         {"reason": "dimension_disabled"}, session.overall_progress)
+                        continue
+                    self._build_text_index(optimized_text, sandtable_type)
+                    brand_result = self._evaluate_brand_recall(questions, optimized_text)
+                    session.complete_phase(phase, brand_result)
+                    yield _sse_event("phase_complete", session.session_id, phase.value,
+                                     brand_result, session.overall_progress)
+
+                elif phase == EvalPhase.SOLUTION_MATCH:
+                    if "solution_match" not in enabled_keys:
+                        session.skip_phase(phase)
+                        yield _sse_event("phase_skipped", session.session_id, phase.value,
+                                         {"reason": "dimension_disabled"}, session.overall_progress)
+                        continue
+                    solution_result = self._evaluate_solution_match(questions, optimized_text)
+                    session.complete_phase(phase, solution_result)
+                    yield _sse_event("phase_complete", session.session_id, phase.value,
+                                     solution_result, session.overall_progress)
+
+                elif phase == EvalPhase.ADVANTAGE_CITATION:
+                    if "advantage_citation" not in enabled_keys or not self.llm:
+                        reason = "no_llm" if not self.llm else "dimension_disabled"
+                        session.skip_phase(phase)
+                        yield _sse_event("phase_skipped", session.session_id, phase.value,
+                                         {"reason": reason}, session.overall_progress)
+                        continue
+                    advantage_result = await self._evaluate_advantage_citation(questions, optimized_text, sandtable_type)
+                    session.complete_phase(phase, advantage_result)
+                    yield _sse_event("phase_complete", session.session_id, phase.value,
+                                     advantage_result, session.overall_progress)
+
+                elif phase == EvalPhase.STRUCTURE_QUALITY:
+                    if "structure_quality" not in enabled_keys or not self.llm:
+                        reason = "no_llm" if not self.llm else "dimension_disabled"
+                        session.skip_phase(phase)
+                        yield _sse_event("phase_skipped", session.session_id, phase.value,
+                                         {"reason": reason}, session.overall_progress)
+                        continue
+                    structure_result = await self._evaluate_structure(optimized_text, sandtable_type)
+                    session.complete_phase(phase, structure_result)
+                    yield _sse_event("phase_complete", session.session_id, phase.value,
+                                     structure_result, session.overall_progress)
+
+                elif phase == EvalPhase.DIFFERENTIATION:
+                    if "differentiation" not in enabled_keys or not self.llm:
+                        reason = "no_llm" if not self.llm else "dimension_disabled"
+                        session.skip_phase(phase)
+                        yield _sse_event("phase_skipped", session.session_id, phase.value,
+                                         {"reason": reason}, session.overall_progress)
+                        continue
+                    differentiation_result = await self._evaluate_differentiation(optimized_text, sandtable_type)
+                    session.complete_phase(phase, differentiation_result)
+                    yield _sse_event("phase_complete", session.session_id, phase.value,
+                                     differentiation_result, session.overall_progress)
+
+                elif phase == EvalPhase.COMPREHENSIVE:
+                    components = {}
+                    if brand_result and "brand_recall" in enabled_keys:
+                        components["brand_recall"] = brand_result.get("average", 0)
+                    if solution_result and "solution_match" in enabled_keys:
+                        components["solution_match"] = solution_result.get("average", 0)
+                    if advantage_result and "advantage_citation" in enabled_keys:
+                        components["advantage_citation"] = advantage_result.get("average", 0)
+                    if structure_result and "structure_quality" in enabled_keys:
+                        components["structure_quality"] = structure_result.get("average", 0)
+                    if differentiation_result and "differentiation" in enabled_keys:
+                        components["differentiation"] = differentiation_result.get("average", 0)
+
+                    overall = 0.0
+                    for key, score in components.items():
+                        overall += score * weight_map.get(key, 0)
+
+                    comparison = None
+                    if original_text:
+                        comparison = await self._compare_before_after(original_text, optimized_text, questions)
+
+                    all_scores = {**components, "overall": overall}
+                    weak_points, suggestions = self._diagnose_v2(all_scores, sandtable_type)
+
+                    comprehensive_result = {
+                        "overall_score": round(overall, 1),
+                        "dimension_scores": components,
+                        "weights_used": {k: round(v * 100, 1) for k, v in weight_map.items()},
+                        "before_after_comparison": comparison,
+                        "weak_points": weak_points,
+                        "suggestions": suggestions,
+                    }
+                    session.complete_phase(phase, comprehensive_result)
+                    session.mark_completed(round(overall, 1))
+                    yield _sse_event("phase_complete", session.session_id, phase.value,
+                                     comprehensive_result, session.overall_progress)
+                    yield _sse_event("eval_complete", session.session_id, "done",
+                                     comprehensive_result, 100.0)
+
+            except Exception as e:
+                logger.exception(f"Session {session.session_id}: phase {phase.value} failed")
+                session.fail_phase(phase, str(e))
+                yield _sse_event("phase_failed", session.session_id, phase.value,
+                                 {"error": str(e)}, session.overall_progress)
+                if phase == EvalPhase.COMPREHENSIVE:
+                    session.mark_failed()
+                    yield _sse_event("eval_error", session.session_id, "error",
+                                     {"error": str(e)}, session.overall_progress)
+
+    async def _evaluate_structure(self, text: str, sandtable_type: SandtableType) -> dict:
+        """LLM评估结构化程度"""
+        if not self.llm:
+            return {"average": 0, "details": [], "reason": "no_llm"}
+
+        from app.prompts.evaluation import STRUCTURE_EVAL_SYSTEM, STRUCTURE_EVAL_USER
+
+        cache_key = f"structure:{hash(text)}"
+        cached = eval_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        messages = [
+            LLMMessage(role="system", content=STRUCTURE_EVAL_SYSTEM),
+            LLMMessage(role="user", content=STRUCTURE_EVAL_USER.format(
+                text=text[:3000],
+                sandtable_type=sandtable_type.label,
+            )),
+        ]
+        resp = await async_retry(self.llm.chat, messages, temperature=0.3, max_tokens=512)
+        score = self._extract_score(resp.content)
+        result = {"average": score, "analysis": resp.content, "details": [score]}
+        eval_cache.set(cache_key, result)
+        return result
+
+    async def _evaluate_differentiation(self, text: str, sandtable_type: SandtableType) -> dict:
+        """LLM评估差异化程度"""
+        if not self.llm:
+            return {"average": 0, "details": [], "reason": "no_llm"}
+
+        from app.prompts.evaluation import DIFFERENTIATION_EVAL_SYSTEM, DIFFERENTIATION_EVAL_USER
+
+        cache_key = f"diff:{hash(text)}"
+        cached = eval_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        messages = [
+            LLMMessage(role="system", content=DIFFERENTIATION_EVAL_SYSTEM),
+            LLMMessage(role="user", content=DIFFERENTIATION_EVAL_USER.format(
+                text=text[:3000],
+                sandtable_type=sandtable_type.label,
+            )),
+        ]
+        resp = await async_retry(self.llm.chat, messages, temperature=0.3, max_tokens=512)
+        score = self._extract_score(resp.content)
+        result = {"average": score, "analysis": resp.content, "details": [score]}
+        eval_cache.set(cache_key, result)
+        return result
+
+    def _diagnose_v2(self, scores: dict, sandtable_type: SandtableType) -> tuple[list[str], list[str]]:
+        """短板诊断 v2 — 支持任意维度组合"""
+        weak_points = []
+        suggestions = []
+
+        thresholds = {
+            "brand_recall": ("品牌召回率", "品牌名称、地域标识、核心关键词在文本中的密度和位置不够突出",
+                             '建议：在文案首段和标题中更突出"武汉微艺达"品牌名和地域标识，增加核心关键词自然密度'),
+            "solution_match": ("方案匹配度", "文本与用户实际搜索意图的语义相关性不足",
+                               "建议：增加场景化描述和问题导向内容，让文本更贴近用户的实际搜索问法"),
+            "advantage_citation": ("优势采信率", "核心优势在AI模拟引用中未被充分提及",
+                                   "建议：将核心优势以独立段落呈现，确保每条优势有具体数据和案例支撑"),
+            "structure_quality": ("结构化程度", "文本结构不够清晰，AI提取关键信息的难度较大",
+                                  "建议：增加清晰的标题层级，使用列表呈现关键信息，控制段落长度在200字以内"),
+            "differentiation": ("差异化程度", "文本缺乏独特信息，易被竞品内容替代",
+                                "建议：增加具体数据、专利号、获奖信息、项目量级等差异化内容"),
+        }
+
+        has_weakness = False
+        for key, (label, weak_msg, suggest_msg) in thresholds.items():
+            score = scores.get(key, 100)
+            if score < 60:
+                has_weakness = True
+                weak_points.append(f"{label}偏低（{score}分）：{weak_msg}")
+                suggestions.append(suggest_msg)
+
+        if not has_weakness:
             weak_points.append("各项指标表现良好，暂无明显短板")
             suggestions.append("建议：持续监控AI平台算法更新，定期迭代优化文案")
 
