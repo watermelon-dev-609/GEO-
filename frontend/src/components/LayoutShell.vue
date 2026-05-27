@@ -86,6 +86,19 @@
             <el-breadcrumb-item :to="{ path: '/dashboard' }">首页</el-breadcrumb-item>
             <el-breadcrumb-item>{{ currentPageTitle }}</el-breadcrumb-item>
           </el-breadcrumb>
+          <div class="pipeline-steps">
+            <div
+              v-for="(step, i) in pipelineSteps"
+              :key="step.path"
+              class="pipeline-step"
+              :class="{ active: i === activePipelineStep, done: i < activePipelineStep }"
+              @click="$router.push(step.path)"
+            >
+              <span class="step-dot">{{ i < activePipelineStep ? '✓' : i + 1 }}</span>
+              <span class="step-label">{{ step.label }}</span>
+              <span v-if="i < pipelineSteps.length - 1" class="step-line" />
+            </div>
+          </div>
         </div>
         <div class="topbar-right">
           <el-button size="small" @click="checkConfig" :icon="Setting">配置检查</el-button>
@@ -114,6 +127,22 @@ const store = useGeoStore()
 const activeMenu = computed(() => route.path)
 const currentPageTitle = computed(() => route.meta?.title || '')
 const hasConfiguredLLM = computed(() => store.configuredPlatforms.length > 0)
+
+// ── 流水线步骤指示器 ──
+const pipelineSteps = [
+  { path: '/import', label: '文案导入', order: 0 },
+  { path: '/workshop', label: 'GEO优化', order: 1 },
+  { path: '/evaluation', label: 'AI评测', order: 2 },
+  { path: '/export', label: '成果导出', order: 3 },
+]
+
+const activePipelineStep = computed(() => {
+  // 根据 store 状态判断当前处于第几步
+  if (store.hasEvaluation) return 3  // 评测完成，进入导出
+  if (store.hasResults) return 2     // 优化完成，进入评测
+  if (store.hasCleanedText) return 1 // 清洗完成，进入优化
+  return 0                            // 导入
+})
 
 // ── API Key 配置弹窗 ──
 const showConfigDialog = ref(false)
@@ -191,7 +220,17 @@ async function checkConfig() {
 .config-status { margin-bottom: 6px; }
 .version { font-size: 11px; color: #606266; }
 .topbar { background: #fff; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #ebeef5; padding: 0 24px; height: 56px; }
+.topbar-left { display: flex; align-items: center; gap: 32px; }
 .topbar-right { display: flex; gap: 8px; }
+.pipeline-steps { display: flex; align-items: center; }
+.pipeline-step { display: flex; align-items: center; cursor: pointer; font-size: 12px; color: #c0c4cc; white-space: nowrap; transition: color 0.2s; }
+.pipeline-step.active { color: #409EFF; font-weight: bold; }
+.pipeline-step.done { color: #67C23A; }
+.step-dot { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; margin-right: 4px; border: 1.5px solid currentColor; }
+.pipeline-step.active .step-dot { background: #409EFF; color: #fff; border-color: #409EFF; }
+.pipeline-step.done .step-dot { background: #67C23A; color: #fff; border-color: #67C23A; }
+.step-line { display: inline-block; width: 20px; height: 1.5px; background: #dcdfe6; margin: 0 6px; }
+.pipeline-step.done .step-line { background: #67C23A; }
 .main-content { background: #f5f7fa; padding: 24px; overflow-y: auto; }
 .config-plat-row { margin-bottom: 16px; padding: 12px; background: #fafafa; border-radius: 8px; border: 1px solid #ebeef5; }
 .config-plat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }

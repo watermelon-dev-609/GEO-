@@ -84,7 +84,38 @@
           </div>
 
           <div v-else>
-            <div class="cleaned-text">{{ cleanedText }}</div>
+            <!-- 清洗摘要 -->
+            <div class="clean-summary">
+              <span class="clean-stat">
+                清洗前 <strong>{{ beforeText.length }}</strong> 字符 →
+                清洗后 <strong>{{ cleanedText.length }}</strong> 字符
+              </span>
+              <el-tag :type="changePercent > 30 ? 'warning' : 'success'" size="small">
+                {{ changePercent > 0 ? `精简 ${changePercent}%` : '无变化' }}
+              </el-tag>
+            </div>
+
+            <!-- 清洗前后对比 -->
+            <el-tabs v-model="viewMode" type="card" size="small">
+              <el-tab-pane label="清洗后结果" name="cleaned">
+                <div class="cleaned-text">{{ cleanedText }}</div>
+              </el-tab-pane>
+              <el-tab-pane label="清洗前原文" name="original">
+                <div class="original-text">{{ beforeText }}</div>
+              </el-tab-pane>
+              <el-tab-pane label="并排对比" name="diff">
+                <el-row :gutter="12" class="diff-row">
+                  <el-col :span="12">
+                    <div class="diff-label">清洗前</div>
+                    <div class="diff-text original">{{ beforeText }}</div>
+                  </el-col>
+                  <el-col :span="12">
+                    <div class="diff-label">清洗后</div>
+                    <div class="diff-text cleaned">{{ cleanedText }}</div>
+                  </el-col>
+                </el-row>
+              </el-tab-pane>
+            </el-tabs>
           </div>
         </el-card>
 
@@ -114,7 +145,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
 import { cleanText, extractInfo } from '../api'
@@ -129,8 +160,14 @@ const fileContent = ref('')
 const sandtableType = ref('')
 const isCleaning = ref(false)
 const cleanedText = ref('')
+const beforeText = ref('')
+const viewMode = ref('cleaned')
 const dimensions = ref(null)
 const detectedType = ref('')
+const changePercent = computed(() => {
+  if (!beforeText.value.length) return 0
+  return Math.round((1 - cleanedText.value.length / beforeText.value.length) * 100)
+})
 
 const sandtableTypes = [
   { value: 'smart_traffic', label: '智慧交通沙盘' },
@@ -186,6 +223,7 @@ async function startCleaning() {
     return
   }
 
+  beforeText.value = content
   isCleaning.value = true
   try {
     const res = await cleanText({
@@ -228,5 +266,13 @@ function goToWorkshop() {
 .empty-state { text-align: center; padding: 48px 0; color: #909399; }
 .empty-state p { margin-top: 12px; }
 .cleaned-text { max-height: 400px; overflow-y: auto; white-space: pre-wrap; line-height: 1.8; font-size: 14px; background: #fafafa; padding: 16px; border-radius: 8px; }
+.original-text { max-height: 400px; overflow-y: auto; white-space: pre-wrap; line-height: 1.8; font-size: 14px; background: #fff7e6; padding: 16px; border-radius: 8px; color: #909399; }
+.clean-summary { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 10px 14px; background: #f0f9eb; border-radius: 8px; }
+.clean-stat { font-size: 14px; color: #303133; }
+.diff-row { margin-top: 8px; }
+.diff-label { font-size: 13px; font-weight: bold; color: #606266; margin-bottom: 8px; }
+.diff-text { white-space: pre-wrap; font-size: 13px; line-height: 1.7; padding: 12px; border-radius: 8px; max-height: 500px; overflow-y: auto; }
+.diff-text.original { background: #fff7e6; color: #909399; }
+.diff-text.cleaned { background: #f0f9eb; color: #303133; }
 .file-preview { margin-top: 12px; }
 </style>

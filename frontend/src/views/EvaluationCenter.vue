@@ -255,6 +255,20 @@
             />
           </el-card>
 
+          <!-- 一键采纳 -->
+          <div v-if="suggestions.length > 0" style="margin-top: 16px;">
+            <el-card shadow="never" style="background: #ecf5ff; border-color: #409EFF;">
+              <div style="text-align: center;">
+                <p style="font-size: 15px; color: #303133; margin-bottom: 12px;">
+                  检测到 <strong>{{ suggestions.length }}</strong> 条优化建议，一键采纳全部并返回工坊重新优化
+                </p>
+                <el-button type="primary" size="large" @click="applyAllAndReoptimize">
+                  采纳全部建议并重新优化
+                </el-button>
+              </div>
+            </el-card>
+          </div>
+
           <!-- 操作 -->
           <div style="text-align: right; margin-top: 16px">
             <el-button type="primary" @click="resetEval">重新评测</el-button>
@@ -778,6 +792,18 @@ function goToOptimize() {
     suggestions: suggestions.value,
     sourceText: evalText.value,
     sandtableType: sandtableType.value,
+    autoAdoptAll: false,
+  })
+  router.push('/workshop')
+}
+
+function applyAllAndReoptimize() {
+  store.setReoptimizeContext({
+    weakPoints: weakPoints.value,
+    suggestions: suggestions.value,
+    sourceText: evalText.value,
+    sandtableType: sandtableType.value,
+    autoAdoptAll: true,  // GEOWorkshop 检测此标志自动采纳全部建议
   })
   router.push('/workshop')
 }

@@ -242,7 +242,12 @@ onMounted(() => {
     if (ctx.sourceText) sourceText.value = ctx.sourceText
     if (ctx.sandtableType) sandtableType.value = ctx.sandtableType
     if (ctx.weakPoints?.length) reoptWeakPoints.value = ctx.weakPoints
-    if (ctx.suggestions?.length) reoptSuggestions.value = ctx.suggestions
+    if (ctx.suggestions?.length) {
+      reoptSuggestions.value = ctx.suggestions
+      if (ctx.autoAdoptAll) {
+        adoptedHints.value = [...ctx.suggestions]
+      }
+    }
     showReoptContext.value = true
     store.clearReoptimizeContext()
   }
