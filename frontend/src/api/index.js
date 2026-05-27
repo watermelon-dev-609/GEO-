@@ -42,6 +42,8 @@ export const getEvalSession = (id) => api.get(`/evaluate/session/${id}`)
 export const cancelEval = (id) => api.post(`/evaluate/cancel/${id}`)
 export const getEvalHistory = () => api.get('/evaluate/history')
 export const getEvalHistoryDetail = (id) => api.get(`/evaluate/history/${id}`)
+export const deleteEvalHistory = (id) => api.delete(`/evaluate/history/${id}`)
+export const compareEvalHistory = (data) => api.post('/evaluate/history/compare', data)
 
 /**
  * 创建 SSE 连接开始评测

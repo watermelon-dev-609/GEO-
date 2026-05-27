@@ -29,11 +29,40 @@ export const useGeoStore = defineStore('geo', () => {
   const evalMode = ref('pipeline')
   const evalDimensionConfigs = ref([])
 
+  // ── 评测历史 ──
+  const evalHistory = ref([])
+  const evalHistoryLoading = ref(false)
+
   // ── Computed ──
   const hasCleanedText = computed(() => !!cleanedText.value)
   const hasResults = computed(() => rewriteResults.value.length > 0)
   const hasEvaluation = computed(() => !!evaluationResult.value)
   const configuredPlatforms = computed(() => llmConfigs.value.filter(c => c.configured))
+
+  const recentEvaluations = computed(() => {
+    return evalHistory.value
+      .filter(h => h.overall_score !== null)
+      .slice(0, 3)
+  })
+
+  const averageEvalScore = computed(() => {
+    const scored = evalHistory.value.filter(h => h.overall_score !== null)
+    if (scored.length === 0) return null
+    return (scored.reduce((sum, h) => sum + h.overall_score, 0) / scored.length).toFixed(1)
+  })
+
+  const scoreTrend = computed(() => {
+    const scored = evalHistory.value.filter(h => h.overall_score !== null)
+    if (scored.length < 2) return null
+    const latest = scored[0].overall_score
+    const previous = scored[1].overall_score
+    if (latest > previous) return 'up'
+    if (latest < previous) return 'down'
+    return 'stable'
+  })
+
+  // ── 重优化上下文 ──
+  const reoptimizeContext = ref(null)
 
   // ── Actions ──
   function setOriginalText(text) { originalText.value = text }
@@ -78,6 +107,52 @@ export const useGeoStore = defineStore('geo', () => {
     evalOverallScore.value = null
   }
 
+  async function fetchEvalHistory() {
+    evalHistoryLoading.value = true
+    try {
+      const { getEvalHistory } = await import('../api/index.js')
+      const res = await getEvalHistory()
+      evalHistory.value = res.data.items || []
+    } catch {
+      // 静默失败
+    } finally {
+      evalHistoryLoading.value = false
+    }
+  }
+
+  function pushToHistory(sessionData) {
+    evalHistory.value.unshift({
+      session_id: sessionData.session_id || '',
+      status: sessionData.status || 'completed',
+      overall_score: sessionData.overall_score ?? null,
+      sandtable_type: sessionData.sandtable_type || '',
+      mode: sessionData.mode || 'pipeline',
+      created_at: sessionData.created_at || new Date().toISOString(),
+      _detail: sessionData,
+    })
+    if (evalHistory.value.length > 100) {
+      evalHistory.value = evalHistory.value.slice(0, 100)
+    }
+  }
+
+  async function deleteEvalHistoryItem(id) {
+    try {
+      const { deleteEvalHistory } = await import('../api/index.js')
+      await deleteEvalHistory(id)
+      evalHistory.value = evalHistory.value.filter(h => h.session_id !== id)
+    } catch {
+      // 静默失败
+    }
+  }
+
+  function setReoptimizeContext(ctx) {
+    reoptimizeContext.value = ctx
+  }
+
+  function clearReoptimizeContext() {
+    reoptimizeContext.value = null
+  }
+
   function reset() {
     currentStep.value = 'import'
     originalText.value = ''
@@ -101,5 +176,8 @@ export const useGeoStore = defineStore('geo', () => {
     evalOverallScore, evalMode, evalDimensionConfigs,
     setEvalSessionId, setEvalStatus, setEvalPhase, setEvalProgress,
     setEvalScore, setEvalMode, setEvalDimensionConfigs, resetEvalSession,
+    evalHistory, evalHistoryLoading, fetchEvalHistory, pushToHistory, deleteEvalHistoryItem,
+    recentEvaluations, averageEvalScore, scoreTrend,
+    reoptimizeContext, setReoptimizeContext, clearReoptimizeContext,
   }
 })
