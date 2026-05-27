@@ -165,3 +165,45 @@ class SystemConfigResponse(BaseModel):
     embedding_model: str
     data_dir: str
     version: str
+
+from .enums import EvalPhase, EvalPhaseStatus
+
+# ── 评测维度配置 ──
+
+class EvalDimensionConfig(BaseModel):
+    key: str = Field(..., description="维度key")
+    label: str = Field(..., description="维度中文名")
+    requires_llm: bool = Field(default=False)
+    weight: float = Field(default=20.0, ge=0, le=100)
+    enabled: bool = Field(default=True)
+
+class EvalStartRequest(BaseModel):
+    optimized_text: str = Field(..., max_length=50000)
+    original_text: str | None = Field(default=None, max_length=50000)
+    sandtable_type: str = Field(default="smart_traffic")
+    platforms: list[str] = Field(default_factory=lambda: ["deepseek"])
+    user_roles: list[str] = Field(default_factory=lambda: ["b_end_procurement"])
+    custom_questions: list[str] = Field(default_factory=list)
+    dimensions: list[EvalDimensionConfig] = Field(default_factory=list)
+    mode: str = Field(default="pipeline")
+
+class EvalPhaseResult(BaseModel):
+    phase: EvalPhase
+    status: EvalPhaseStatus
+    result: dict | None = None
+    error: str | None = None
+
+class EvalSessionResponse(BaseModel):
+    session_id: str
+    status: str
+    phases: dict[str, EvalPhaseResult]
+    overall_progress: float = 0.0
+    overall_score: float | None = None
+    created_at: str = ""
+
+class EvalHistoryItem(BaseModel):
+    session_id: str
+    sandtable_type: str
+    overall_score: float | None = None
+    created_at: str = ""
+    mode: str = "pipeline"

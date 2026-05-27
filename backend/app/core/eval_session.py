@@ -1,0 +1,116 @@
+"""评测会话状态机 — 管理阶段流转、取消、中间结果"""
+
+from __future__ import annotations
+import uuid
+import asyncio
+import logging
+from datetime import datetime, timezone
+from app.models.enums import EvalPhase, EvalPhaseStatus
+
+logger = logging.getLogger(__name__)
+
+# 全局会话存储（内存）
+_sessions: dict[str, "EvalSession"] = {}
+
+
+class EvalSession:
+    """一次完整的评测会话"""
+
+    def __init__(self):
+        self.session_id: str = uuid.uuid4().hex[:12]
+        self.status: str = "running"
+        self._cancelled: bool = False
+        self.phases: dict[EvalPhase, dict] = {}
+        self.phase_results: dict[EvalPhase, dict] = {}
+        self.overall_progress: float = 0.0
+        self.overall_score: float | None = None
+        self._event_queue: asyncio.Queue | None = None
+        self.created_at: str = datetime.now(timezone.utc).isoformat()
+
+        for phase in EvalPhase:
+            self.phases[phase] = {"status": EvalPhaseStatus.PENDING.value}
+
+        _sessions[self.session_id] = self
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled
+
+    def cancel(self):
+        self._cancelled = True
+        logger.info(f"Session {self.session_id}: cancel requested")
+
+    def start_phase(self, phase: EvalPhase):
+        self.phases[phase]["status"] = EvalPhaseStatus.RUNNING.value
+        self._update_progress()
+
+    def complete_phase(self, phase: EvalPhase, result: dict | None = None):
+        self.phases[phase]["status"] = EvalPhaseStatus.COMPLETED.value
+        if result is not None:
+            self.phase_results[phase] = result
+        self._update_progress()
+
+    def skip_phase(self, phase: EvalPhase):
+        self.phases[phase]["status"] = EvalPhaseStatus.SKIPPED.value
+        self._update_progress()
+
+    def fail_phase(self, phase: EvalPhase, error: str):
+        self.phases[phase]["status"] = EvalPhaseStatus.FAILED.value
+        self.phases[phase]["error"] = error
+        self._update_progress()
+
+    def mark_completed(self, overall_score: float):
+        self.status = "completed"
+        self.overall_score = overall_score
+        self.overall_progress = 100.0
+
+    def mark_failed(self):
+        self.status = "failed"
+
+    def mark_cancelled(self):
+        self.status = "cancelled"
+        for phase in EvalPhase:
+            if self.phases[phase]["status"] == EvalPhaseStatus.PENDING.value:
+                self.phases[phase]["status"] = EvalPhaseStatus.CANCELLED.value
+        self.overall_progress = 100.0
+
+    def _update_progress(self):
+        total = len(EvalPhase)
+        completed = sum(
+            1 for p in EvalPhase
+            if self.phases[p]["status"] in (
+                EvalPhaseStatus.COMPLETED.value,
+                EvalPhaseStatus.SKIPPED.value,
+                EvalPhaseStatus.FAILED.value,
+            )
+        )
+        self.overall_progress = round((completed / total) * 100, 1)
+
+    def to_dict(self) -> dict:
+        return {
+            "session_id": self.session_id,
+            "status": self.status,
+            "phases": {
+                p.value: {
+                    "status": self.phases[p]["status"],
+                    "result": self.phase_results.get(p),
+                    "error": self.phases[p].get("error"),
+                }
+                for p in EvalPhase
+            },
+            "overall_progress": self.overall_progress,
+            "overall_score": self.overall_score,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def get(cls, session_id: str) -> "EvalSession | None":
+        return _sessions.get(session_id)
+
+    @classmethod
+    def list_all(cls) -> list["EvalSession"]:
+        return sorted(
+            _sessions.values(),
+            key=lambda s: s.created_at,
+            reverse=True,
+        )
