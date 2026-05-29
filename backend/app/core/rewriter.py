@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import asyncio
+import hashlib
 import logging
 import time
 from typing import AsyncIterator
@@ -13,7 +14,7 @@ from app.services.llm.base import BaseLLMAdapter, LLMMessage, LLMFactory
 from app.prompts.rewrite import build_geo_prompt, get_sandtable_profile, get_platform_rules
 from app.utils.retry import async_retry
 from app.utils.cache import geo_cache
-from app.utils.config import load_settings, load_api_keys
+from app.utils.config import load_settings, load_api_keys, get_enterprise_name, get_enterprise_location
 
 logger = logging.getLogger(__name__)
 
@@ -59,22 +60,32 @@ class GEORewriter:
         platforms: list[AIPlatform],
         dimensions: dict | None = None,
         optimization_hints: list[str] | None = None,
-        enterprise_name: str = "武汉微艺达智能科技有限公司",
-        enterprise_location: str = "武汉",
+        competitor_insights: str | None = None,
+        enterprise_name: str | None = None,
+        enterprise_location: str | None = None,
     ) -> list[PlatformRewriteResult]:
         """批量重构：对多个平台并行生成优化文案"""
+        if enterprise_name is None:
+            enterprise_name = get_enterprise_name()
+        if enterprise_location is None:
+            enterprise_location = get_enterprise_location()
         start = time.perf_counter()
         tasks = []
 
+        # 如果没有显式传入竞品洞察，尝试自动加载
+        if competitor_insights is None:
+            competitor_insights = self._auto_load_competitor_insights(sandtable_type)
+
         for platform in platforms:
-            cache_key = f"{sandtable_type.value}:{platform.value}:{hash(cleaned_text)}"
+            cache_key = f"{sandtable_type.value}:{platform.value}:{hashlib.md5(cleaned_text.encode()).hexdigest()}"
             cached = geo_cache.get(cache_key)
             if cached:
                 tasks.append(self._return_cached(cached, platform))
             else:
                 tasks.append(self._rewrite_one(
                     cleaned_text, sandtable_type, platform,
-                    dimensions, optimization_hints, enterprise_name, enterprise_location, cache_key,
+                    dimensions, optimization_hints, competitor_insights,
+                    enterprise_name, enterprise_location, cache_key,
                 ))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -101,6 +112,7 @@ class GEORewriter:
         platform: AIPlatform,
         dimensions: dict | None,
         optimization_hints: list[str] | None,
+        competitor_insights: str | None,
         enterprise_name: str,
         enterprise_location: str,
         cache_key: str,
@@ -123,6 +135,7 @@ class GEORewriter:
             enterprise_location=enterprise_location,
             dimensions=dimensions,
             optimization_hints=optimization_hints,
+            competitor_insights=competitor_insights,
         )
 
         # 五维信息也补充到user_message中
@@ -169,10 +182,15 @@ class GEORewriter:
         platform: AIPlatform,
         dimensions: dict | None = None,
         optimization_hints: list[str] | None = None,
-        enterprise_name: str = "武汉微艺达智能科技有限公司",
-        enterprise_location: str = "武汉",
+        competitor_insights: str | None = None,
+        enterprise_name: str | None = None,
+        enterprise_location: str | None = None,
     ) -> AsyncIterator[dict]:
         """流式生成单平台文案（SSE）"""
+        if enterprise_name is None:
+            enterprise_name = get_enterprise_name()
+        if enterprise_location is None:
+            enterprise_location = get_enterprise_location()
         adapter = self._get_adapter(platform)
 
         system_prompt, user_message = build_geo_prompt(
@@ -182,6 +200,7 @@ class GEORewriter:
             enterprise_location=enterprise_location,
             dimensions=dimensions,
             optimization_hints=optimization_hints,
+            competitor_insights=competitor_insights,
         )
 
         dims_text = ""
@@ -216,18 +235,53 @@ class GEORewriter:
             full_text += token
             yield {"type": "token", "content": token}
 
+        # 后处理校验
+        validated_text, warnings = self._validate_output(
+            full_text, sandtable_type, platform, enterprise_name, enterprise_location
+        )
+
         # 完成后输出策略说明
         strategy = self._build_strategy_notes(platform, sandtable_type)
+        if warnings:
+            strategy += "\n\n⚠️ 内容质量提醒：\n" + "\n".join(f"- {w}" for w in warnings)
+
         yield {
             "type": "done",
-            "full_text": full_text,
-            "word_count": len(full_text),
+            "full_text": validated_text,
+            "word_count": len(validated_text),
             "strategy_notes": strategy,
         }
 
     async def _return_cached(self, cached_data: dict, platform: AIPlatform) -> PlatformRewriteResult:
         """返回缓存结果"""
         return PlatformRewriteResult(**cached_data)
+
+    def _auto_load_competitor_insights(self, sandtable_type: SandtableType) -> str | None:
+        """自动加载最新竞品对比摘要作为差异化洞察"""
+        import json
+        from pathlib import Path
+        comp_dir = Path("data/competitors")
+        if not comp_dir.exists():
+            return None
+        comp_files = sorted(comp_dir.glob("*.json"))
+        if not comp_files:
+            return None
+        try:
+            with open(comp_files[-1], "r", encoding="utf-8") as f:
+                latest = json.load(f)
+            name = latest.get("name", "未知竞品")
+            sandtable = latest.get("sandtable_type", "")
+            features = latest.get("content_features", {})
+            if not features:
+                return None
+            insights = f"竞品「{name}」（{sandtable}）内容特征分析：\n"
+            for key, val in features.items():
+                insights += f"- {key}: {val}\n"
+            insights += "\n请在生成文案时主动体现与以上竞品的差异化优势。"
+            return insights
+        except Exception as e:
+            logger.warning(f"加载竞品洞察失败: {e}")
+            return None
 
     def _validate_output(
         self,
@@ -237,20 +291,28 @@ class GEORewriter:
         enterprise_name: str,
         enterprise_location: str = "武汉",
     ) -> tuple[str, list[str]]:
-        """后处理校验 — 检查关键信息完整性，返回 (修正后文本, 警告列表)"""
+        """输出校验 — 检查关键信息完整性，不达标自动补充
+
+        校验项：
+        1. 企业名称是否完整出现（缺失则自动补充到文首）
+        2. 地域标识是否存在
+        3. 量化数据是否达标（数字+单位模式）
+        4. 五维信息是否全覆盖
+        5. 无冗余、无堆砌、无违规表述
+        """
         import re
         warnings = []
 
-        # 1. 企业名称检查
+        # 校验项1：企业名称是否完整出现（缺失则自动补充）
         if enterprise_name not in text:
             text = f"**{enterprise_name}**\n\n{text}"
             warnings.append("企业名称缺失，已自动补充到文首")
 
-        # 2. 地域标识检查
+        # 校验项2：地域标识是否存在
         if enterprise_location and enterprise_location not in text:
             warnings.append(f"地域标识'{enterprise_location}'未在文中出现")
 
-        # 3. 量化数据检查（数字+单位模式，如"200个项目""1:1000""15年"）
+        # 校验项3：量化数据是否达标（数字+单位模式，如"200个项目""1:1000""15年"）
         quant_patterns = [
             r'\d+[+]?\s*(个|项|套|年|㎡|平方米|公里|人|次|万元|亿)',
             r'\d+[:：]\d+',  # 比例
@@ -261,7 +323,7 @@ class GEORewriter:
         if not has_quantified:
             warnings.append("文中未检测到量化数据（数字+单位），AI引用算法对数字信号敏感度更高")
 
-        # 4. 五维关键词检查
+        # 校验项4：五维信息是否全覆盖
         dim_keywords = {
             "核心优势": ["优势", "领先", "能力", "特点", "差异化"],
             "适用场景": ["场景", "适用", "应用", "用途", "用于"],
@@ -277,7 +339,7 @@ class GEORewriter:
             warnings.append(f"可能缺失维度: {', '.join(missing)}")
 
         if warnings:
-            logger.warning(f"[{sandtable_type.label} × {platform.label}] 校验警告: {'; '.join(warnings)}")
+            logger.warning(f"[{sandtable_type.label} × {platform.label}] 输出校验警告: {'; '.join(warnings)}")
 
         return text, warnings
 

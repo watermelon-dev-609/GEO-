@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import uuid
+import time
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -9,33 +10,21 @@ from app.models.enums import EvalPhase, EvalPhaseStatus
 
 logger = logging.getLogger(__name__)
 
-# 全局会话存储（内存）
+_SESSION_TTL_SECONDS = 7200  # 2小时过期
+
 _sessions: dict[str, "EvalSession"] = {}
+_sessions_lock = asyncio.Lock()
+
+
+def _now_ts() -> float:
+    return time.time()
 
 
 class EvalSession:
     """一次完整的评测会话"""
 
     def __init__(self, sandtable_type: str = "", mode: str = "pipeline"):
-        self.session_id: str = uuid.uuid4().hex[:12]
-        self.status: str = "running"
-        self._cancelled: bool = False
-        self.phases: dict[EvalPhase, dict] = {}
-        self.phase_results: dict[EvalPhase, dict] = {}
-        self.overall_progress: float = 0.0
-        self.overall_score: float | None = None
-        self._event_queue: asyncio.Queue | None = None
-        self.sandtable_type: str = sandtable_type
-        self.mode: str = mode
-        self.evaluated_text: str = ""
-        self.original_text: str = ""
-        self.platforms: list[str] = []
-        self.created_at: str = datetime.now(timezone.utc).isoformat()
-
-        for phase in EvalPhase:
-            self.phases[phase] = {"status": EvalPhaseStatus.PENDING.value}
-
-        _sessions[self.session_id] = self
+        self.__init_args__(sandtable_type, mode)
 
     @property
     def cancelled(self) -> bool:
@@ -123,13 +112,65 @@ class EvalSession:
         }
 
     @classmethod
-    def get(cls, session_id: str) -> "EvalSession | None":
-        return _sessions.get(session_id)
+    async def create(cls, sandtable_type: str = "", mode: str = "pipeline") -> "EvalSession":
+        """创建会话并原子注册到全局存储"""
+        await cls._cleanup_stale()
+        session = cls.__new__(cls)
+        session.__init_args__(sandtable_type, mode)
+        async with _sessions_lock:
+            _sessions[session.session_id] = session
+        return session
+
+    def __init_args__(self, sandtable_type: str = "", mode: str = "pipeline"):
+        """内部初始化（不注册到全局存储，由 create() 统一注册）"""
+        self.session_id: str = uuid.uuid4().hex[:12]
+        self.status: str = "running"
+        self._cancelled: bool = False
+        self.phases: dict[EvalPhase, dict] = {}
+        self.phase_results: dict[EvalPhase, dict] = {}
+        self.overall_progress: float = 0.0
+        self.overall_score: float | None = None
+        self._event_queue: asyncio.Queue | None = None
+        self.sandtable_type: str = sandtable_type
+        self.mode: str = mode
+        self.evaluated_text: str = ""
+        self.original_text: str = ""
+        self.platforms: list[str] = []
+        self.created_at: str = datetime.now(timezone.utc).isoformat()
+        self._created_ts: float = _now_ts()
+
+        for phase in EvalPhase:
+            self.phases[phase] = {"status": EvalPhaseStatus.PENDING.value}
 
     @classmethod
-    def list_all(cls) -> list["EvalSession"]:
-        return sorted(
-            _sessions.values(),
-            key=lambda s: s.created_at,
-            reverse=True,
-        )
+    async def get(cls, session_id: str) -> "EvalSession | None":
+        async with _sessions_lock:
+            return _sessions.get(session_id)
+
+    @classmethod
+    async def list_all(cls) -> list["EvalSession"]:
+        async with _sessions_lock:
+            return sorted(
+                _sessions.values(),
+                key=lambda s: s.created_at,
+                reverse=True,
+            )
+
+    @classmethod
+    async def remove(cls, session_id: str):
+        async with _sessions_lock:
+            _sessions.pop(session_id, None)
+
+    @classmethod
+    async def _cleanup_stale(cls):
+        """移除超过 TTL 的过期会话，防止内存泄漏"""
+        async with _sessions_lock:
+            now = _now_ts()
+            stale_ids = [
+                sid for sid, s in _sessions.items()
+                if (now - s._created_ts) > _SESSION_TTL_SECONDS
+            ]
+            for sid in stale_ids:
+                del _sessions[sid]
+            if stale_ids:
+                logger.info(f"清理了 {len(stale_ids)} 个过期会话")

@@ -1,5 +1,6 @@
 """文本清洗API路由"""
 
+import asyncio
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import (
     CleaningRequest, CleaningResponse,
@@ -11,14 +12,18 @@ from app.utils.config import load_settings, load_api_keys
 from app.models.enums import AIPlatform, SandtableType
 
 router = APIRouter()
+_cleaner_instance: TextCleaner | None = None
+_cleaner_adapter_key: str | None = None
 
 
 def _get_cleaner() -> TextCleaner:
-    """获取清洗器实例 — 优先用 default_model，不可用则自动选择第一个已配置的平台"""
+    """获取清洗器实例 — 优先用 default_model，不可用则自动选择第一个已配置的平台。
+    实例被缓存，仅当配置变更时重建。"""
+    global _cleaner_instance, _cleaner_adapter_key
+
     settings = load_settings()
     api_keys = load_api_keys()
 
-    # 收集所有已配置 Key 的平台
     platforms_cfg = settings.get("llm", {}).get("platforms", {})
     available = []
     for plat_key, plat_cfg in platforms_cfg.items():
@@ -33,7 +38,6 @@ def _get_cleaner() -> TextCleaner:
             detail="暂未配置任何AI平台的API Key，请在侧边栏「配置API Key」中配置"
         )
 
-    # 优先用 default_model，否则用第一个可用的
     default_platform = settings.get("llm", {}).get("default_model", "")
     selected = None
     for plat_key, plat_cfg, key_info in available:
@@ -44,7 +48,18 @@ def _get_cleaner() -> TextCleaner:
         selected = available[0]
 
     plat_key, plat_cfg, key_info = selected
+    cache_key = f"{plat_key}:{key_info.get('api_key', '')[:8]}"
+
+    if _cleaner_instance is not None and _cleaner_adapter_key == cache_key:
+        return _cleaner_instance
+
     adapter_type = AIPlatform(plat_key).adapter_type
+    if _cleaner_instance is not None and hasattr(_cleaner_instance.llm, 'close'):
+        try:
+            asyncio.ensure_future(_cleaner_instance.llm.close())
+        except Exception:
+            pass
+
     adapter = LLMFactory.create(
         platform=adapter_type,
         api_key=key_info.get("api_key", ""),
@@ -54,7 +69,9 @@ def _get_cleaner() -> TextCleaner:
     if adapter_type == "wenxin":
         adapter.secret_key = key_info.get("secret_key", "")
 
-    return TextCleaner(adapter)
+    _cleaner_instance = TextCleaner(adapter)
+    _cleaner_adapter_key = cache_key
+    return _cleaner_instance
 
 
 @router.post("/clean", response_model=CleaningResponse)
@@ -70,12 +87,31 @@ async def clean_text(req: CleaningRequest):
         dimensions = None
         detected_type = req.sandtable_type
 
-        if req.extract_dimensions:
-            dims = await cleaner.extract_dimensions(result["cleaned_text"])
-            dimensions = dims
+        if req.extract_dimensions or not detected_type:
+            tasks = []
+            if req.extract_dimensions:
+                tasks.append(cleaner.extract_dimensions(result["cleaned_text"]))
+            else:
+                tasks.append(asyncio.sleep(0))
+            if not detected_type:
+                tasks.append(cleaner.detect_type(req.content))
+            else:
+                tasks.append(asyncio.sleep(0))
 
-        if not detected_type:
-            detected_type = await cleaner.detect_type(req.content)
+            gathered = await asyncio.gather(*tasks, return_exceptions=True)
+            idx = 0
+            if req.extract_dimensions:
+                dim_result = gathered[idx]
+                if isinstance(dim_result, Exception):
+                    raise dim_result
+                dimensions = dim_result
+                idx += 1
+            else:
+                idx += 1
+            if not detected_type:
+                type_result = gathered[idx]
+                if not isinstance(type_result, Exception):
+                    detected_type = type_result
 
         return CleaningResponse(
             original_text=result["original_text"],
@@ -97,8 +133,15 @@ async def extract_info(req: CleaningRequest):
     """单独提取五维关键信息"""
     try:
         cleaner = _get_cleaner()
-        dims = await cleaner.extract_dimensions(req.content)
-        detected = req.sandtable_type or await cleaner.detect_type(req.content) or SandtableType.smart_traffic
+        dims, detected = await asyncio.gather(
+            cleaner.extract_dimensions(req.content),
+            cleaner.detect_type(req.content),
+            return_exceptions=True,
+        )
+        if isinstance(dims, Exception):
+            raise dims
+        if isinstance(detected, Exception) or detected is None:
+            detected = SandtableType("smart_traffic")
 
         return InfoExtractionResponse(
             sandtable_type=detected,

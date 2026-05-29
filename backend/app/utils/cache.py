@@ -1,7 +1,11 @@
-"""本地文件缓存 — 零依赖、纯文件系统缓存"""
+"""本地文件缓存 — 零依赖、纯文件系统缓存，支持 async/sync 双接口"""
 
+import asyncio
 import json
+import os
 import pickle
+import tempfile
+import threading
 import hashlib
 import time
 from pathlib import Path
@@ -10,7 +14,9 @@ from app.utils.config import get_data_dir
 
 
 class LocalCache:
-    """轻量化本地缓存"""
+    """轻量化本地缓存 — sync 方法供核心引擎调用，async 方法供 API 层调用"""
+
+    _write_lock = threading.Lock()
 
     def __init__(self, namespace: str = "default", ttl_seconds: int = 3600):
         self.namespace = namespace
@@ -31,39 +37,53 @@ class LocalCache:
         mp = self._meta_path(kp)
         if not kp.exists() or not mp.exists():
             return None
-        try:
-            with open(mp, "r") as f:
-                meta = json.load(f)
-            if time.time() - meta["ts"] > self.ttl:
-                self.delete(key)
+        with self._write_lock:
+            if not kp.exists() or not mp.exists():
                 return None
-            with open(kp, "rb") as f:
-                return pickle.load(f)
-        except (OSError, pickle.PickleError, json.JSONDecodeError):
-            return None
+            try:
+                with open(mp, "r") as f:
+                    meta = json.load(f)
+                if time.time() - meta["ts"] > self.ttl:
+                    for p in (kp, mp):
+                        if p.exists():
+                            p.unlink()
+                    return None
+                with open(kp, "rb") as f:
+                    return pickle.load(f)
+            except (OSError, pickle.PickleError, json.JSONDecodeError):
+                return None
 
     def set(self, key: str, value: Any) -> None:
         """写入缓存"""
         kp = self._key_path(key)
         mp = self._meta_path(kp)
-        with open(kp, "wb") as f:
-            pickle.dump(value, f)
-        with open(mp, "w") as f:
-            json.dump({"ts": time.time(), "key": key}, f)
+        with self._write_lock:
+            with tempfile.NamedTemporaryFile(mode="wb", suffix=".cache",
+                                              delete=False, dir=self.cache_dir) as tmp:
+                pickle.dump(value, tmp)
+                tmp_kp = tmp.name
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".meta.json",
+                                              delete=False, dir=self.cache_dir) as tmp:
+                json.dump({"ts": time.time(), "key": key}, tmp)
+                tmp_mp = tmp.name
+            os.replace(tmp_kp, str(kp))
+            os.replace(tmp_mp, str(mp))
 
     def delete(self, key: str) -> None:
         kp = self._key_path(key)
         mp = self._meta_path(kp)
-        for p in (kp, mp):
-            if p.exists():
-                p.unlink()
+        with self._write_lock:
+            for p in (kp, mp):
+                if p.exists():
+                    p.unlink()
 
     def clear(self) -> int:
         """清空命名空间所有缓存，返回清除数量"""
         count = 0
-        for f in self.cache_dir.glob("*"):
-            f.unlink()
-            count += 1
+        with self._write_lock:
+            for f in self.cache_dir.glob("*"):
+                f.unlink()
+                count += 1
         return count
 
     def stats(self) -> dict:
@@ -77,6 +97,18 @@ class LocalCache:
             "total_size_mb": round(total_size / 1024 / 1024, 2),
             "ttl_seconds": self.ttl,
         }
+
+    async def async_get(self, key: str) -> Optional[Any]:
+        """异步读取缓存（不阻塞事件循环）"""
+        return await asyncio.to_thread(self.get, key)
+
+    async def async_set(self, key: str, value: Any) -> None:
+        """异步写入缓存（不阻塞事件循环）"""
+        await asyncio.to_thread(self.set, key, value)
+
+    async def async_delete(self, key: str) -> None:
+        """异步删除缓存"""
+        await asyncio.to_thread(self.delete, key)
 
 
 # 全局缓存实例

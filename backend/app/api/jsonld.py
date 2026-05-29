@@ -1,7 +1,7 @@
 """JSON-LD生成API路由"""
 
 from fastapi import APIRouter, HTTPException
-from app.models.schemas import JSONLDRequest, JSONLDResponse
+from app.models.schemas import JSONLDRequest, JSONLDResponse, JSONLDValidateRequest
 from app.models.enums import SandtableType
 from app.core.jsonld_gen import JSONLDGenerator, SCHEMA_MAPPING
 
@@ -46,15 +46,12 @@ async def get_template_by_type(sandtable_type: SandtableType):
 
 
 @router.post("/validate")
-async def validate_jsonld(req: dict):
+async def validate_jsonld(req: JSONLDValidateRequest):
     """校验JSON-LD代码合法性"""
     import json
     gen = JSONLDGenerator()
     try:
-        if isinstance(req.get("json_ld"), str):
-            data = json.loads(req["json_ld"])
-        else:
-            data = req.get("json_ld", req)
+        data = json.loads(req.json_ld)
         valid = gen._validate(data)
         return {"valid": valid}
     except Exception as e:

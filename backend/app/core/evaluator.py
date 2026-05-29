@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import asyncio
+import hashlib
 import logging
 import time
 import numpy as np
@@ -13,10 +14,11 @@ from app.services.vector_store import VectorStore
 from app.services.llm.base import BaseLLMAdapter, LLMMessage, LLMFactory
 from app.prompts.evaluation import (
     SIMULATED_EVAL_SYSTEM, SIMULATED_EVAL_USER,
+    EEAT_EVAL_SYSTEM, EEAT_EVAL_USER,
 )
 from app.utils.retry import async_retry
 from app.utils.cache import eval_cache
-from app.utils.config import load_settings, load_api_keys
+from app.utils.config import load_settings, load_api_keys, get_enterprise_name, get_enterprise_location
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +102,18 @@ class AIEvaluator:
         """完整评测流程"""
         start = time.perf_counter()
 
+        # 空文本/过短文本校验
+        if not optimized_text or len(optimized_text.strip()) < 50:
+            return {
+                "overall_score": 0,
+                "platform_results": [],
+                "before_after_comparison": None,
+                "weak_points": ["输入文本过短（少于50字），无法进行有效评测"],
+                "suggestions": ["请提供完整的企业/产品文案后重新评测"],
+                "total_time_ms": 0,
+                "questions_used": 0,
+            }
+
         user_roles = user_roles or list(UserRole)
         platforms = platforms or [AIPlatform.DEEPSEEK]
 
@@ -115,51 +129,70 @@ class AIEvaluator:
         # Step 4: 语义方案匹配评测
         solution_match_scores = self._evaluate_solution_match(questions, optimized_text)
 
-        # Step 5: LLM模拟采信评测（有LLM时才做）
+        # Step 5-9: LLM评测维度（有LLM时才做）
         advantage_scores = {}
+        structure_scores = {}
+        differentiation_scores = {}
+        real_citation_scores = {}
+        eeat_scores = {}
+        source_consistency_scores = {}
         if self.llm:
             advantage_scores = await self._evaluate_advantage_citation(questions, optimized_text, sandtable_type)
+            structure_scores = await self._evaluate_structure(optimized_text, sandtable_type)
+            differentiation_scores = await self._evaluate_differentiation(optimized_text, sandtable_type)
+            real_citation_scores = await self._evaluate_real_citation(questions, optimized_text, sandtable_type)
+            eeat_scores = await self._evaluate_eeat(
+                optimized_text, sandtable_type,
+                enterprise_name=get_enterprise_name(),
+            )
+            source_consistency_scores = await self._evaluate_source_consistency(
+                optimized_text, sandtable_type,
+                enterprise_name=get_enterprise_name(),
+                enterprise_location=get_enterprise_location(),
+            )
 
-        # Step 6: 分平台综合评分
+        # Step 10: 分平台综合评分（8维加权）
+        components = {
+            "brand_recall": brand_recall_scores.get("average", 0),
+            "solution_match": solution_match_scores.get("average", 0),
+            "advantage_citation": advantage_scores.get("average", 0),
+            "structure_quality": structure_scores.get("average", 0),
+            "differentiation": differentiation_scores.get("average", 0),
+            "real_citation": real_citation_scores.get("average", 0),
+            "eeat_score": eeat_scores.get("average", 70),
+            "source_consistency": source_consistency_scores.get("average", 100),
+        }
+        overall = self._calculate_overall_v2(components)
+
         platform_results = []
         for plat in platforms:
-            overall = self._calculate_overall(brand_recall_scores, solution_match_scores, advantage_scores)
             platform_results.append(PlatformEvalResult(
                 platform=plat,
                 scores=[
-                    EvaluationScore(
-                        dimension=EvalDimension.BRAND_RECALL,
-                        score=round(brand_recall_scores.get("average", 0), 1),
-                        detail=f"基于{len(questions)}个问题的品牌召回评测",
-                    ),
-                    EvaluationScore(
-                        dimension=EvalDimension.SOLUTION_MATCH,
-                        score=round(solution_match_scores.get("average", 0), 1),
-                        detail=f"语义匹配度评测",
-                    ),
-                    EvaluationScore(
-                        dimension=EvalDimension.ADVANTAGE_CITATION,
-                        score=round(advantage_scores.get("average", 0), 1) if advantage_scores else 0,
-                        detail="LLM模拟引评测" if advantage_scores else "未配置LLM，跳过",
-                    ),
+                    EvaluationScore(dimension=EvalDimension.BRAND_RECALL, score=round(components["brand_recall"], 1), detail=f"基于{len(questions)}个问题的品牌召回评测"),
+                    EvaluationScore(dimension=EvalDimension.SOLUTION_MATCH, score=round(components["solution_match"], 1), detail="语义匹配度评测"),
+                    EvaluationScore(dimension=EvalDimension.ADVANTAGE_CITATION, score=round(components["advantage_citation"], 1), detail="LLM模拟采信评测" if self.llm else "未配置LLM，跳过"),
+                    EvaluationScore(dimension=EvalDimension.STRUCTURE_QUALITY, score=round(components["structure_quality"], 1), detail="LLM结构化评测" if self.llm else "未配置LLM，跳过"),
+                    EvaluationScore(dimension=EvalDimension.DIFFERENTIATION, score=round(components["differentiation"], 1), detail="LLM差异化评测" if self.llm else "未配置LLM，跳过"),
+                    EvaluationScore(dimension=EvalDimension.REAL_CITATION, score=round(components["real_citation"], 1), detail="LLM真实引用评测" if self.llm else "未配置LLM，跳过"),
+                    EvaluationScore(dimension=EvalDimension.EEAT_SCORE, score=round(components["eeat_score"], 1), detail="LLM E-E-A-T权威度评测" if self.llm else "未配置LLM，跳过"),
+                    EvaluationScore(dimension=EvalDimension.SOURCE_CONSISTENCY, score=round(components["source_consistency"], 1), detail="LLM信源一致性评测" if self.llm else "未配置LLM，跳过"),
                 ],
                 overall_score=round(overall, 1),
             ))
 
-        # Step 7: 优化前后对比
+        # Step 10: 优化前后对比
         comparison = None
         if original_text:
             comparison = await self._compare_before_after(original_text, optimized_text, questions)
 
-        # Step 8: 短板诊断
-        weak_points, suggestions = self._diagnose(
-            brand_recall_scores, solution_match_scores, advantage_scores, sandtable_type
-        )
+        # Step 11: 短板诊断（统一使用v2）
+        weak_points, suggestions = self._diagnose_v2(components, sandtable_type)
 
         elapsed = (time.perf_counter() - start) * 1000
 
         return {
-            "overall_score": round(np.mean([p.overall_score for p in platform_results]), 1),
+            "overall_score": round(overall, 1),
             "platform_results": [p.model_dump() for p in platform_results],
             "before_after_comparison": comparison,
             "weak_points": weak_points,
@@ -213,17 +246,27 @@ class AIEvaluator:
         return {"average": round(float(avg), 1), "scores": [round(float(s), 2) for s in scores]}
 
     def _evaluate_solution_match(self, questions: list[str], text: str) -> dict:
-        """方案匹配度评测"""
-        # 使用更细粒度的文本切片进行匹配
-        from app.utils.text_splitter import default_splitter
-        chunks = default_splitter.split(text) if text else [text]
-        chunk_vecs = self.embedding_svc.encode(chunks)
+        """方案匹配度评测 — 句级细粒度语义匹配（区别于品牌召回的段落级检索）"""
+        import re
+        if not text or not text.strip():
+            return {"average": 0, "scores": []}
+
+        # 句级切分：按句号、分号、问号、感叹号、换行拆分
+        sentences = re.split(r'[。；;！!？?\n]+', text)
+        sentences = [s.strip() for s in sentences if len(s.strip()) >= 10]
+        if not sentences:
+            sentences = [text.strip()]
+
+        sent_vecs = self.embedding_svc.encode(sentences)
         query_vecs = self.embedding_svc.encode_queries(questions)
 
         scores = []
         for q_vec in query_vecs:
-            similarities = self.embedding_svc.batch_similarity(q_vec, chunk_vecs)
-            scores.append(float(np.max(similarities)) if len(similarities) > 0 else 0)
+            similarities = self.embedding_svc.batch_similarity(q_vec, sent_vecs)
+            # 取 top-3 句子相似度均值，比单句 max 更稳定
+            top_n = sorted(similarities, reverse=True)[:3]
+            score = float(np.mean(top_n)) if top_n else 0
+            scores.append(score)
 
         avg = np.mean(scores) * 100 if scores else 0
         return {"average": round(float(avg), 1), "scores": [round(float(s), 2) for s in scores]}
@@ -243,7 +286,7 @@ class AIEvaluator:
         sample_questions = questions[:5] if len(questions) > 5 else questions
 
         for question in sample_questions:
-            cache_key = f"citation:{hash(question + text)}"
+            cache_key = f"citation:{hashlib.md5((question + text).encode()).hexdigest()}"
             cached = eval_cache.get(cache_key)
             if cached is not None:
                 scores.append(cached)
@@ -311,48 +354,16 @@ class AIEvaluator:
             "improvement_percent": improvement,
         }
 
-    def _calculate_overall(self, brand: dict, solution: dict, advantage: dict) -> float:
-        """计算综合评分（加权）"""
-        weights = {"brand": 0.35, "solution": 0.35, "advantage": 0.30}
-        b = brand.get("average", 0)
-        s = solution.get("average", 0)
-        a = advantage.get("average", 0)
-        return (b * weights["brand"] + s * weights["solution"] + a * weights["advantage"]) if advantage else (
-            (b * 0.5 + s * 0.5)
-        )
+    def _calculate_overall_v2(self, components: dict) -> float:
+        """计算综合评分（8维加权，与流式评测一致，权重统一从 DimensionRegistry 读取）"""
+        from app.core.eval_dimensions import DEFAULT_WEIGHTS
+        weights = {k: v / 100.0 for k, v in DEFAULT_WEIGHTS.items()}
+        overall = sum(components.get(k, 0) * w for k, w in weights.items())
+        source_consistency = components.get("source_consistency", 100)
+        if source_consistency < 30:
+            overall = min(overall, 50.0)
 
-    def _diagnose(
-        self,
-        brand: dict,
-        solution: dict,
-        advantage: dict,
-        sandtable_type: SandtableType,
-    ) -> tuple[list[str], list[str]]:
-        """短板诊断与迭代建议"""
-        weak_points = []
-        suggestions = []
-
-        b_avg = brand.get("average", 0)
-        s_avg = solution.get("average", 0)
-        a_avg = advantage.get("average", 0)
-
-        if b_avg < 60:
-            weak_points.append(f"品牌召回率偏低（{b_avg}分）：品牌名称、地域标识、核心关键词在文本中的密度和位置不够突出")
-            suggestions.append('建议：在文案首段和标题中更突出"武汉微艺达"品牌名和地域标识，增加核心关键词自然密度')
-
-        if s_avg < 60:
-            weak_points.append(f"方案匹配度偏低（{s_avg}分）：文本与用户实际搜索意图的语义相关性不足")
-            suggestions.append("建议：增加场景化描述和问题导向内容，让文本更贴近用户的实际搜索问法")
-
-        if advantage and a_avg < 60:
-            weak_points.append(f"优势采信率偏低（{a_avg}分）：核心优势在AI模拟引用中未被充分提及")
-            suggestions.append("建议：将核心优势以独立段落呈现，确保每条优势有具体数据和案例支撑")
-
-        if not weak_points:
-            weak_points.append("各项指标表现良好，暂无明显短板")
-            suggestions.append("建议：持续监控AI平台算法更新，定期迭代优化文案")
-
-        return weak_points, suggestions
+        return overall
 
     async def evaluate_stream(
         self,
@@ -366,6 +377,12 @@ class AIEvaluator:
     ):
         """分阶段流式评测 — async generator，逐阶段 yield SSE 数据"""
         from app.core.eval_dimensions import DimensionRegistry
+
+        # 空文本/过短文本校验
+        if not optimized_text or len(optimized_text.strip()) < 50:
+            yield _sse_event("eval_error", session.session_id, "error",
+                             {"error": "输入文本过短（少于50字），无法进行有效评测"}, 0)
+            return
 
         user_roles = user_roles or list(UserRole)
         phase_order = DimensionRegistry.get_phases_from_configs(dimension_configs)
@@ -384,6 +401,7 @@ class AIEvaluator:
         advantage_result = None
         structure_result = None
         differentiation_result = None
+        eeat_result = None
         real_citation_result = None
         source_consistency_result = None
 
@@ -475,6 +493,21 @@ class AIEvaluator:
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      differentiation_result, session.overall_progress)
 
+                elif phase == EvalPhase.EEAT_CHECK:
+                    if "eeat_score" not in enabled_keys or not self.llm:
+                        reason = "no_llm" if not self.llm else "dimension_disabled"
+                        session.skip_phase(phase)
+                        yield _sse_event("phase_skipped", session.session_id, phase.value,
+                                         {"reason": reason}, session.overall_progress)
+                        continue
+                    eeat_result = await self._evaluate_eeat(
+                        optimized_text, sandtable_type,
+                        enterprise_name=get_enterprise_name(),
+                    )
+                    session.complete_phase(phase, eeat_result)
+                    yield _sse_event("phase_complete", session.session_id, phase.value,
+                                     eeat_result, session.overall_progress)
+
                 elif phase == EvalPhase.SOURCE_CHECK:
                     if "source_consistency" not in enabled_keys or not self.llm:
                         reason = "no_llm" if not self.llm else "dimension_disabled"
@@ -484,8 +517,8 @@ class AIEvaluator:
                         continue
                     source_consistency_result = await self._evaluate_source_consistency(
                         optimized_text, sandtable_type,
-                        enterprise_name="武汉微艺达智能科技有限公司",
-                        enterprise_location="武汉",
+                        enterprise_name=get_enterprise_name(),
+                        enterprise_location=get_enterprise_location(),
                     )
                     session.complete_phase(phase, source_consistency_result)
                     yield _sse_event("phase_complete", session.session_id, phase.value,
@@ -505,12 +538,19 @@ class AIEvaluator:
                         components["differentiation"] = differentiation_result.get("average", 0)
                     if real_citation_result and "real_citation" in enabled_keys:
                         components["real_citation"] = real_citation_result.get("average", 0)
+                    if eeat_result and "eeat_score" in enabled_keys:
+                        components["eeat_score"] = eeat_result.get("average", 0)
                     if source_consistency_result and "source_consistency" in enabled_keys:
                         components["source_consistency"] = source_consistency_result.get("average", 0)
 
                     overall = 0.0
                     for key, score in components.items():
                         overall += score * weight_map.get(key, 0)
+
+                    # 信源一致性硬门槛：信源不可靠时综合分封顶50分
+                    source_consistency_score = components.get("source_consistency", 100)
+                    if source_consistency_score < 30:
+                        overall = min(overall, 50.0)
 
                     comparison = None
                     if original_text:
@@ -551,7 +591,7 @@ class AIEvaluator:
 
         from app.prompts.evaluation import STRUCTURE_EVAL_SYSTEM, STRUCTURE_EVAL_USER
 
-        cache_key = f"structure:{hash(text)}"
+        cache_key = f"structure:{hashlib.md5(text.encode()).hexdigest()}"
         cached = eval_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -576,7 +616,7 @@ class AIEvaluator:
 
         from app.prompts.evaluation import DIFFERENTIATION_EVAL_SYSTEM, DIFFERENTIATION_EVAL_USER
 
-        cache_key = f"diff:{hash(text)}"
+        cache_key = f"diff:{hashlib.md5(text.encode()).hexdigest()}"
         cached = eval_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -586,6 +626,37 @@ class AIEvaluator:
             LLMMessage(role="user", content=DIFFERENTIATION_EVAL_USER.format(
                 text=text[:3000],
                 sandtable_type=sandtable_type.label,
+            )),
+        ]
+        resp = await async_retry(self.llm.chat, messages, temperature=0.3, max_tokens=512)
+        score = self._extract_score(resp.content)
+        result = {"average": score, "analysis": resp.content, "details": [score]}
+        eval_cache.set(cache_key, result)
+        return result
+
+    async def _evaluate_eeat(
+        self,
+        text: str,
+        sandtable_type: SandtableType,
+        enterprise_name: str | None = None,
+    ) -> dict:
+        """LLM评估E-E-A-T权威度"""
+        if enterprise_name is None:
+            enterprise_name = get_enterprise_name()
+        if not self.llm:
+            return {"average": 0, "details": [], "reason": "no_llm"}
+
+        cache_key = f"eeat:{hashlib.md5(text.encode()).hexdigest()}"
+        cached = eval_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        messages = [
+            LLMMessage(role="system", content=EEAT_EVAL_SYSTEM),
+            LLMMessage(role="user", content=EEAT_EVAL_USER.format(
+                text=text[:3000],
+                sandtable_type=sandtable_type.label,
+                enterprise_name=enterprise_name,
             )),
         ]
         resp = await async_retry(self.llm.chat, messages, temperature=0.3, max_tokens=512)
@@ -611,7 +682,7 @@ class AIEvaluator:
         details = []
 
         for q in sample_qs:
-            cache_key = f"real_cite:{hash(q + text)}"
+            cache_key = f"real_cite:{hashlib.md5((q + text).encode()).hexdigest()}"
             cached = eval_cache.get(cache_key)
             if cached is not None:
                 details.append(cached)
@@ -646,9 +717,10 @@ class AIEvaluator:
                 logger.warning(f"真实引用测试失败: {e}")
                 details.append({"question": q, "cited": False, "citation_score": 0, "error": str(e)})
 
-        avg = (cited / len(sample_qs)) * 100 if sample_qs else 0
+        citation_scores = [d.get("citation_score", 0) for d in details]
+        avg = sum(citation_scores) / len(citation_scores) if citation_scores else 0
         return {
-            "average": round(avg, 1),
+            "average": round(float(avg), 1),
             "details": details,
             "cited_count": cited,
             "total": len(sample_qs),
@@ -693,17 +765,21 @@ class AIEvaluator:
         self,
         text: str,
         sandtable_type: SandtableType,
-        enterprise_name: str = "武汉微艺达智能科技有限公司",
-        enterprise_location: str = "武汉",
+        enterprise_name: str | None = None,
+        enterprise_location: str | None = None,
         dimensions: dict | None = None,
     ) -> dict:
         """信源一致性检查：检测生成文本是否偏离企业信源数据"""
+        if enterprise_name is None:
+            enterprise_name = get_enterprise_name()
+        if enterprise_location is None:
+            enterprise_location = get_enterprise_location()
         if not self.llm:
             return {"average": 70, "details": [], "reason": "no_llm"}
 
         from app.prompts.evaluation import SOURCE_CHECK_SYSTEM, SOURCE_CHECK_USER
 
-        cache_key = f"source_check:{hash(text)}"
+        cache_key = f"source_check:{hashlib.md5(text.encode()).hexdigest()}"
         cached = eval_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -760,6 +836,8 @@ class AIEvaluator:
                               "建议：增加可被直接引用的实体锚点和定义性陈述，确保品牌名、量化数据和FAQ格式在文中清晰呈现"),
             "source_consistency": ("信源一致性", "生成文本中存在偏离企业官方信源的信息，存在AI幻觉风险",
                                    "建议：返回GEO工坊重新优化，确保五维信息完整准确，避免LLM编造数据"),
+            "eeat_score": ("E-E-A-T权威度", "文本在企业经验、专业度、权威性、可信度方面表现不足，AI采信权重偏低",
+                           "建议：增加企业年限/项目数量（Experience）、技术工艺深度（Expertise）、资质认证（Authoritativeness）、真实联系方式（Trustworthiness）等权威信号"),
         }
 
         has_weakness = False
@@ -773,5 +851,11 @@ class AIEvaluator:
         if not has_weakness:
             weak_points.append("各项指标表现良好，暂无明显短板")
             suggestions.append("建议：持续监控AI平台算法更新，定期迭代优化文案")
+
+        # 信源一致性严重警告
+        source_score = scores.get("source_consistency", 100)
+        if source_score < 30:
+            weak_points.insert(0, f"信源一致性严重偏低（{source_score}分）：优化后的文案中包含大量信源数据中不存在的信息，存在AI编造风险，当前评测得分的参考价值有限")
+            suggestions.insert(0, "建议：返回GEO工坊重新优化，在优化前确保五维信息已完整提取，并检查原始文案中是否包含足够的技术参数和案例数据")
 
         return weak_points, suggestions

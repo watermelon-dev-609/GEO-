@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime
 import json
 
-from app.utils.config import get_data_dir
+from app.utils.config import get_data_dir, get_enterprise_name
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +286,7 @@ li {{ margin: 8px 0; }}
     <div class="header">
         <h1>GEO生成式搜索优化评测报告</h1>
         <div class="meta">
-            <p>服务主体：武汉微艺达智能科技有限公司</p>
+            <p>服务主体：{get_enterprise_name()}</p>
             <p>报告编号：{report_id} | 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
         </div>
     </div>
@@ -323,7 +323,7 @@ li {{ margin: 8px 0; }}
     </div>
 
     <div class="footer">
-        <p>本报告由GEO生成式搜索优化系统自动生成 | 武汉微艺达智能科技有限公司</p>
+        <p>本报告由GEO生成式搜索优化系统自动生成 | {get_enterprise_name()}</p>
         <p>纯白帽合规优化 · 全平台AI采信适配</p>
     </div>
 </div>
@@ -336,19 +336,23 @@ li {{ margin: 8px 0; }}
         return path
 
     def _render_pdf(self, data: dict, chart_paths: dict, report_id: str) -> Path:
-        """生成PDF报表（先HTML再转PDF）"""
+        """生成PDF报表（先HTML再转PDF，失败时抛出明确错误并提供HTML兜底）"""
         html_path = self._render_html(data, chart_paths, report_id)
         pdf_path = self.output_dir / f"{report_id}.pdf"
 
         try:
             from weasyprint import HTML
             HTML(filename=str(html_path)).write_pdf(str(pdf_path))
+            return pdf_path
         except ImportError:
-            logger.warning("weasyprint未安装，无法生成PDF，请使用HTML格式")
+            raise RuntimeError(
+                f"PDF生成需要 weasyprint 库。请执行: pip install weasyprint。"
+                f"当前HTML报告已生成至: {html_path}"
+            )
         except Exception as e:
-            logger.warning(f"PDF生成失败: {e}")
-
-        return pdf_path
+            raise RuntimeError(
+                f"PDF生成失败: {e}。HTML报告已生成至: {html_path}，可直接使用HTML格式"
+            )
 
     def _render_json(self, data: dict, report_id: str) -> Path:
         """生成JSON报表"""

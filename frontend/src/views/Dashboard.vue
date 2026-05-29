@@ -19,6 +19,52 @@
       </el-col>
     </el-row>
 
+    <!-- 数据看板 -->
+    <div v-loading="analyticsLoading" style="min-height:100px;">
+      <el-result
+        v-if="analyticsError"
+        icon="error"
+        title="数据加载失败"
+        sub-title="无法获取看板数据，请检查后端服务"
+      >
+        <template #extra>
+          <el-button type="primary" @click="loadAnalytics">重试</el-button>
+        </template>
+      </el-result>
+      <el-empty
+        v-else-if="!analyticsLoading && (!analytics || !analytics.overview || analytics.overview.scored_evaluations === 0)"
+        description="暂无评测数据，请先完成AI评测"
+      >
+        <el-button type="primary" @click="$router.push('/evaluation')">开始评测</el-button>
+      </el-empty>
+      <el-row v-else :gutter="20" style="margin-top:24px;">
+        <el-col :span="6">
+          <el-card shadow="never" class="stat-card">
+            <div class="stat-number" style="color:#C8963E;">{{ analytics.overview.scored_evaluations ?? 0 }}</div>
+            <div class="stat-label">累计评测</div>
+          </el-card>
+        </el-col>
+        <el-col :span="6">
+          <el-card shadow="never" class="stat-card">
+            <div class="stat-number" style="color:#5B8C5A;">{{ analytics.overview.average_score ?? '-' }}</div>
+            <div class="stat-label">平均评分</div>
+          </el-card>
+        </el-col>
+        <el-col :span="6">
+          <el-card shadow="never" class="stat-card">
+            <div class="stat-number" style="color:#D4956A;">{{ analytics.overview.improvement_rate ?? 0 }}%</div>
+            <div class="stat-label">优化改进率</div>
+          </el-card>
+        </el-col>
+        <el-col :span="6">
+          <el-card shadow="never" class="stat-card">
+            <div class="stat-number" style="color:#8065E6;">{{ Object.keys(analytics.dimension_averages || {}).length }}</div>
+            <div class="stat-label">监测维度</div>
+          </el-card>
+        </el-col>
+      </el-row>
+    </div>
+
     <el-row :gutter="20" style="margin-top: 24px;">
       <el-col :span="12">
         <el-card shadow="never">
@@ -67,7 +113,10 @@
               </el-button>
             </div>
           </template>
-          <div v-if="evalHistory.length === 0" class="card-empty">
+          <div v-if="evalHistoryLoading" class="card-empty">
+            <p>加载中...</p>
+          </div>
+          <div v-else-if="evalHistory.length === 0" class="card-empty">
             <p>暂无评测数据</p>
             <el-button size="small" type="primary" @click="$router.push('/evaluation')">开始评测</el-button>
           </div>
@@ -77,11 +126,11 @@
               <el-tag size="small" type="info">{{ item.sandtable_type || '未知' }}</el-tag>
               <el-progress
                 :percentage="item.overall_score || 0"
-                :color="item.overall_score >= 80 ? '#67C23A' : item.overall_score >= 60 ? '#E6A23C' : '#F56C6C'"
+                :color="scoreColor(item.overall_score || 0)"
                 :stroke-width="6"
                 style="flex:1; min-width: 80px;"
               />
-              <span class="eval-mini-score" :style="{ color: item.overall_score >= 80 ? '#67C23A' : item.overall_score >= 60 ? '#E6A23C' : '#F56C6C' }">
+              <span class="eval-mini-score" :style="{ color: scoreColor(item.overall_score || 0) }">
                 {{ item.overall_score ?? '-' }}分
               </span>
             </div>
@@ -98,7 +147,10 @@
           <div v-else class="score-overview">
             <div class="overview-number">{{ avgEvalScore }}</div>
             <div class="overview-label">平均分 / 100</div>
-            <div class="overview-trend" :style="{ color: scoreTrendIcon === 'up' ? '#67C23A' : '#F56C6C' }">
+            <div v-if="scoreTrendIcon === null" class="overview-trend" style="color:#9B9EAA;">
+              数据不足，无法分析趋势
+            </div>
+            <div v-else class="overview-trend" :style="{ color: scoreTrendIcon === 'up' ? '#5B8C5A' : '#C5554A' }">
               {{ scoreTrendIcon === 'up' ? '↑ 呈上升趋势' : '↓ 有所下降' }}
             </div>
             <div class="overview-count">共 {{ evalHistory.filter(h => h.overall_score != null).length }} 次评测</div>
@@ -117,7 +169,7 @@
           <template #header>
             <div class="card-header">
               <span>全域覆盖矩阵</span>
-              <span style="font-size:12px;color:#909399;">
+              <span style="font-size:12px;color:#9B9EAA;">
                 已优化 {{ optimizedPlatformCount }}/7 平台
                 <span v-if="currentSandtable" style="margin-left:8px;">| 当前沙盘: {{ currentSandtable }}</span>
               </span>
@@ -142,7 +194,7 @@
               <span class="matrix-label">详情</span>
               <span v-for="p in allPlatforms" :key="p.value" class="matrix-cell">
                 <template v-if="getPlatformResult(p.value)">
-                  <span style="font-size:12px;color:#606266;">{{ getPlatformResult(p.value).word_count }}字</span>
+                  <span style="font-size:12px;color:#6B6E7B;">{{ getPlatformResult(p.value).word_count }}字</span>
                 </template>
                 <template v-else>
                   <span style="font-size:12px;color:#c0c4cc;">—</span>
@@ -157,7 +209,7 @@
     <el-card shadow="never" style="margin-top: 24px;" v-if="recentProjects.length > 0">
       <template #header>
         <span>最近项目</span>
-        <span style="font-size:12px;color:#909399;margin-left:8px;">点击行可跳转继续工作</span>
+        <span style="font-size:12px;color:#9B9EAA;margin-left:8px;">点击行可跳转继续工作</span>
       </template>
       <el-table :data="recentProjects" style="width: 100%" size="small" @row-click="onProjectClick" :row-style="{ cursor: 'pointer' }">
         <el-table-column prop="name" label="项目名称" />
@@ -173,19 +225,24 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
-import { getLLMConfig, getEvalHistory } from '../api'
+import { getLLMConfig, getEvalHistory, getAnalyticsOverview } from '../api'
+import { ElMessage } from 'element-plus'
+import { SANDTABLE_LABELS, AI_PLATFORMS, scoreColor } from '../constants'
 
 const router = useRouter()
 const store = useGeoStore()
 
 const evalHistory = ref([])
 const evalHistoryLoading = ref(false)
+const analytics = ref(null)
+const analyticsLoading = ref(false)
+const analyticsError = ref(false)
 
 const quickActions = [
-  { path: '/import', title: '文案导入', desc: '导入、清洗标准化文案', icon: 'DocumentAdd', color: '#409EFF' },
-  { path: '/workshop', title: 'GEO优化工坊', desc: '八大沙盘×七大平台专项优化', icon: 'EditPen', color: '#67C23A' },
-  { path: '/evaluation', title: 'AI评测中心', desc: '模拟评测·品牌采信分析', icon: 'DataAnalysis', color: '#E6A23C' },
-  { path: '/export', title: '成果导出', desc: '文案·代码·报表一键导出', icon: 'Download', color: '#B37FEB' },
+  { path: '/import', title: '文案导入', desc: '导入、清洗标准化文案', icon: 'DocumentAdd', color: '#C8963E' },
+  { path: '/workshop', title: 'GEO优化工坊', desc: '八大沙盘×七大平台专项优化', icon: 'EditPen', color: '#5B8C5A' },
+  { path: '/evaluation', title: 'AI评测中心', desc: '模拟评测·品牌采信分析', icon: 'DataAnalysis', color: '#5B8AAC' },
+  { path: '/export', title: '成果导出', desc: '文案·代码·报表一键导出', icon: 'Download', color: '#8065E6' },
 ]
 
 const llmConfigs = computed(() => store.llmConfigs)
@@ -209,15 +266,7 @@ const scoreTrendIcon = computed(() => {
   return scored[0].overall_score >= scored[1].overall_score ? 'up' : 'down'
 })
 
-const allPlatforms = [
-  { value: 'wenxin', label: '文心' },
-  { value: 'tongyi', label: '通义' },
-  { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'doubao', label: '豆包' },
-  { value: 'yuanbao', label: '元宝' },
-  { value: 'kimi', label: 'Kimi' },
-  { value: 'xinghuo', label: '星火' },
-]
+const allPlatforms = AI_PLATFORMS
 
 const optimizedPlatformCount = computed(() => {
   const optimized = new Set(store.rewriteResults.map(r => r.platform))
@@ -225,13 +274,7 @@ const optimizedPlatformCount = computed(() => {
 })
 
 const currentSandtable = computed(() => {
-  const type = store.currentSandtableType
-  const map = {
-    smart_traffic: '智慧交通', smart_city: '智慧城市', smart_industry: '智慧工业',
-    smart_agriculture: '智慧农业', smart_logistics: '智慧物流', military_terrain: '军事地形',
-    digital_multimedia: '数字多媒体', real_estate: '地产/规划/展厅',
-  }
-  return map[type] || ''
+  return SANDTABLE_LABELS[store.currentSandtableType] || ''
 })
 
 function isPlatformConfigured(platform) {
@@ -250,7 +293,8 @@ async function refreshConfig() {
   try {
     const res = await getLLMConfig()
     store.setLLMConfigs(res.data.llm_platforms || [])
-  } catch (e) { console.error('Dashboard config load failed:', e) }
+    ElMessage.success('配置已刷新')
+  } catch (e) { ElMessage.error('配置刷新失败') }
 }
 
 async function loadEvalHistory() {
@@ -258,7 +302,7 @@ async function loadEvalHistory() {
   try {
     const res = await getEvalHistory()
     evalHistory.value = res.data.items || []
-  } catch (e) { console.error('loadEvalHistory failed:', e) }
+  } catch (e) { ElMessage.error('评测历史加载失败') }
   finally { evalHistoryLoading.value = false }
 }
 
@@ -275,7 +319,22 @@ function onProjectClick(row) {
 function formatShortDate(dateStr) {
   if (!dateStr) return ''
   const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return ''
   return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+async function loadAnalytics() {
+  analyticsLoading.value = true
+  analyticsError.value = false
+  try {
+    const res = await getAnalyticsOverview()
+    analytics.value = res.data
+  } catch (e) {
+    analyticsError.value = true
+    console.error('loadAnalytics failed:', e)
+  } finally {
+    analyticsLoading.value = false
+  }
 }
 
 onMounted(async () => {
@@ -284,40 +343,105 @@ onMounted(async () => {
     store.setLLMConfigs(res.data.llm_platforms || [])
   } catch (e) { console.error('checkConfig failed:', e) }
   loadEvalHistory()
+  loadAnalytics()
 })
 </script>
 
 <style scoped>
-.dashboard { max-width: 1200px; }
-.welcome { margin-bottom: 28px; }
-.welcome h1 { font-size: 24px; color: #303133; margin-bottom: 8px; }
-.welcome p { font-size: 14px; color: #909399; }
+.dashboard { max-width: 1240px; }
+
+/* ── Welcome ── */
+.welcome { margin-bottom: 32px; }
+.welcome h1 {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--geo-text);
+  margin-bottom: 6px;
+  letter-spacing: 0.3px;
+}
+.welcome p { font-size: 14px; color: var(--geo-text-secondary); }
+
+/* ── Quick Actions ── */
 .quick-actions { margin-bottom: 0; }
-.action-card { cursor: pointer; transition: transform .2s; }
-.action-card:hover { transform: translateY(-2px); }
-.action-card .el-card__body { display: flex; align-items: center; gap: 16px; padding: 20px; }
-.action-icon { width: 52px; height: 52px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #fff; }
-.action-info h3 { font-size: 16px; margin-bottom: 4px; color: #303133; }
-.action-info p { font-size: 12px; color: #909399; }
+.action-card {
+  cursor: pointer;
+  transition: all var(--geo-transition);
+  border: 1px solid var(--geo-border);
+}
+.action-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--geo-shadow-lg) !important;
+  border-color: var(--geo-primary-border);
+}
+.action-card :deep(.el-card__body) {
+  display: flex; align-items: center; gap: 18px; padding: 22px 20px;
+}
+.action-icon {
+  width: 52px; height: 52px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.action-info h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; color: var(--geo-text); }
+.action-info p { font-size: 12px; color: var(--geo-text-secondary); }
+
+/* ── Card Header ── */
 .card-header { display: flex; justify-content: space-between; align-items: center; }
+
+/* ── Platform Grid ── */
 .platform-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.platform-item { display: flex; align-items: center; gap: 8px; }
-.plat-status { font-size: 13px; color: #606266; }
-.card-empty { text-align: center; padding: 32px 0; color: #909399; }
-.eval-mini-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f5f5f5; }
+.platform-item { display: flex; align-items: center; gap: 10px; }
+.plat-status { font-size: 13px; color: var(--geo-text-secondary); }
+
+/* ── Empty ── */
+.card-empty { text-align: center; padding: 40px 0; color: var(--geo-text-muted); }
+
+/* ── Evaluation Mini ── */
+.eval-mini-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--geo-border-light);
+  transition: background var(--geo-transition-fast);
+}
 .eval-mini-item:last-child { border-bottom: none; }
-.eval-mini-date { font-size: 12px; color: #909399; min-width: 42px; }
-.eval-mini-score { font-size: 16px; font-weight: bold; min-width: 52px; text-align: right; }
-.score-overview { text-align: center; padding: 16px 0; }
-.overview-number { font-size: 56px; font-weight: bold; color: #409EFF; }
-.overview-label { font-size: 14px; color: #909399; margin-top: 4px; }
-.overview-trend { font-size: 14px; font-weight: bold; margin-top: 8px; }
-.overview-count { font-size: 13px; color: #909399; margin-top: 4px; }
-.coverage-matrix { overflow-x: auto; }
-.matrix-header, .matrix-row { display: flex; align-items: center; gap: 0; padding: 6px 0; }
-.matrix-header { font-weight: bold; border-bottom: 2px solid #ebeef5; padding-bottom: 10px; }
-.matrix-label { width: 80px; font-size: 13px; color: #606266; flex-shrink: 0; }
-.matrix-col-header { flex: 1; min-width: 70px; text-align: center; font-size: 13px; color: #909399; }
-.matrix-col-header.configured { color: #409EFF; }
+.eval-mini-item:hover { background: var(--geo-surface-hover); margin: 0 -12px; padding: 10px 12px; border-radius: 6px; }
+.eval-mini-date { font-size: 12px; color: var(--geo-text-muted); min-width: 42px; }
+.eval-mini-score { font-size: 16px; font-weight: 700; min-width: 52px; text-align: right; }
+
+/* ── Score Overview ── */
+.score-overview { text-align: center; padding: 20px 0; }
+.overview-number {
+  font-size: 64px; font-weight: 800;
+  color: var(--geo-primary);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.overview-label { font-size: 14px; color: var(--geo-text-muted); margin-top: 6px; }
+.overview-trend { font-size: 14px; font-weight: 600; margin-top: 10px; }
+.overview-count { font-size: 13px; color: var(--geo-text-muted); margin-top: 6px; }
+
+/* ── Coverage Matrix ── */
+.coverage-matrix { overflow-x: auto; padding: 4px 0; }
+.matrix-header, .matrix-row { display: flex; align-items: center; padding: 8px 0; }
+.matrix-header {
+  font-weight: 600;
+  border-bottom: 2px solid var(--geo-border);
+  padding-bottom: 12px;
+}
+.matrix-label { width: 80px; font-size: 13px; color: var(--geo-text-secondary); flex-shrink: 0; }
+.matrix-col-header { flex: 1; min-width: 70px; text-align: center; font-size: 13px; color: var(--geo-text-muted); }
+.matrix-col-header.configured { color: var(--geo-primary); font-weight: 600; }
 .matrix-cell { flex: 1; min-width: 70px; text-align: center; }
+
+/* ── Stat Cards ── */
+.stat-card {
+  text-align: center;
+  border: 1px solid var(--geo-border);
+  transition: box-shadow var(--geo-transition);
+}
+.stat-card:hover { box-shadow: var(--geo-shadow) !important; }
+.stat-card :deep(.el-card__body) { padding: 24px 16px; }
+.stat-number { font-size: 34px; font-weight: 700; letter-spacing: -0.5px; }
+.stat-label { font-size: 13px; color: var(--geo-text-muted); margin-top: 6px; font-weight: 500; }
 </style>

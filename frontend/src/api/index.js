@@ -58,21 +58,34 @@ export function startEvalSSE(data, onEvent, onError) {
 
   const controller = new AbortController()
   let sessionId = null
+  let sessionIdResolved = false
+  let sessionIdPromiseResolve = null
+  const sessionIdPromise = new Promise(resolve => { sessionIdPromiseResolve = resolve })
+
+  const timeoutMs = data._timeout || 300000
+  const timeoutSignal = AbortSignal.timeout(timeoutMs)
+  const combinedSignal = AbortSignal.any([controller.signal, timeoutSignal])
 
   fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
-    signal: controller.signal,
+    signal: combinedSignal,
   })
     .then(async (response) => {
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: response.statusText }))
-        onError(new Error(err.detail || '评测请求失败'))
+        let detail = response.statusText
+        try {
+          const errBody = await response.json()
+          detail = errBody.detail || detail
+        } catch { /* response body might not be JSON (e.g. SSE error stream) */ }
+        onError(new Error(detail || '评测请求失败'))
         return
       }
 
       sessionId = response.headers.get('X-Session-Id')
+      sessionIdResolved = true
+      sessionIdPromiseResolve(sessionId)
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
@@ -94,7 +107,9 @@ export function startEvalSSE(data, onEvent, onError) {
             try {
               const payload = JSON.parse(line.slice(6))
               onEvent(currentEvent || payload.event, payload)
-            } catch { /* skip bad JSON, not an error */ }
+            } catch (e) {
+              console.warn('[SSE] JSON parse failed for line:', line.slice(0, 80), e.message)
+            }
             currentEvent = ''
           }
         }
@@ -109,14 +124,63 @@ export function startEvalSSE(data, onEvent, onError) {
   return {
     close: () => controller.abort(),
     getSessionId: () => sessionId,
+    waitForSessionId: () => sessionIdPromise,
   }
 }
+
+// ── 数据看板 ──
+export const getAnalyticsOverview = () => api.get('/analytics/overview')
+export const getAnalyticsTrend = (days) => api.get('/analytics/trend', { params: { days } })
+
+// ── 内容诊断 ──
+export const quickDiagnosis = (data) => api.post('/diagnosis/quick', data)
+export const deepDiagnosis = (data) => api.post('/diagnosis/deep', data)
+export const batchDiagnosis = (data) => api.post('/diagnosis/batch', data)
+
+// ── 平台监测 ──
+export const listPlatforms = () => api.get('/platform-monitor/platforms')
+export const getPlatformDetail = (id) => api.get(`/platform-monitor/platforms/${id}`)
+export const updatePlatformRules = (id, data) => api.post(`/platform-monitor/platforms/${id}`, data)
+export const generateLLMSummary = (id) => api.post(`/platform-monitor/platforms/${id}/llm-summary`)
+export const checkAllPlatforms = () => api.post('/platform-monitor/check-all')
+export const checkSinglePlatform = (id) => api.post(`/platform-monitor/check/${id}`)
+export const getSchedulerStatus = () => api.get('/platform-monitor/scheduler/status')
+export const startScheduler = (intervalMinutes) => api.post(`/platform-monitor/scheduler/start?interval_minutes=${intervalMinutes || 30}`)
+export const stopScheduler = () => api.post('/platform-monitor/scheduler/stop')
+
+// ── 关键词库 ──
+export const listSandtableTypes = () => api.get('/keywords/types')
+export const getKeywords = (type) => api.get(`/keywords/${type}`)
+export const addKeyword = (type, data) => api.post(`/keywords/${type}`, data)
+export const deleteKeyword = (type, cat, word) => api.delete(`/keywords/${type}/${cat}/${encodeURIComponent(word)}`)
+export const updateKeyword = (type, cat, word, data) => api.put(`/keywords/${type}/${cat}/${encodeURIComponent(word)}`, data)
+export const expandKeywords = (type, data) => api.post(`/keywords/${type}/expand`, data)
+export const exportKeywordsCSV = (type) => api.get(`/keywords/${type}/export`)
+
+// ── 竞品调研 ──
+export const listCompetitors = () => api.get('/competitors')
+export const getCompetitor = (id) => api.get(`/competitors/${id}`)
+export const createCompetitor = (data) => api.post('/competitors', data)
+export const updateCompetitor = (id, data) => api.put(`/competitors/${id}`, data)
+export const deleteCompetitor = (id) => api.delete(`/competitors/${id}`)
+export const addSnapshot = (id, data) => api.post(`/competitors/${id}/snapshot`, data)
+export const compareCompetitors = (data) => api.post('/competitors/compare', data)
+export const generateCompetitorReport = (data) => api.post('/competitors/report', data)
 
 // ── 报表 ──
 export const previewReport = (data) => api.post('/reports/preview', data)
 export const generateReport = (data) => api.post('/reports/generate-from-data', data)
 export const exportReport = (id, format) => api.get(`/reports/export/${id}`, { params: { format }, responseType: 'blob' })
 export const listReports = () => api.get('/reports/history')
+
+// ── 内容模板 ──
+export const listTemplates = () => api.get('/templates/list')
+export const getTemplate = (id) => api.get(`/templates/${id}`)
+export const saveTemplate = (data) => api.post('/templates/save', data)
+export const deleteTemplate = (id) => api.delete(`/templates/${id}`)
+export const getStandards = () => api.get('/templates/standards/list')
+export const saveStandards = (data) => api.post('/templates/standards/save', data)
+export const exportTemplatesAll = () => api.get('/templates/export/all')
 
 // ── 系统 ──
 export const getLLMConfig = () => api.get('/config/llm')

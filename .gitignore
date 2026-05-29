@@ -1,5 +1,6 @@
 # API Keys
 api_keys.yaml
+backend/.env
 
 # Python
 __pycache__/

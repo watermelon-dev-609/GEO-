@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 
 const STORAGE_KEY = 'geo_pipeline_state'
 
@@ -106,6 +107,9 @@ export const useGeoStore = defineStore('geo', () => {
       evalHistory.value = res.data.items || []
     } catch (e) {
       console.error('fetchEvalHistory failed:', e)
+      if (e.response?.status !== 404) {
+        ElMessage.error('加载评测历史失败: ' + (e.response?.data?.detail || e.message))
+      }
     } finally {
       evalHistoryLoading.value = false
     }
@@ -132,7 +136,10 @@ export const useGeoStore = defineStore('geo', () => {
       await deleteEvalHistory(id)
       evalHistory.value = evalHistory.value.filter(h => h.session_id !== id)
     } catch (e) {
-      console.error('deleteEvalHistoryItem failed:', e)
+      if (e.response?.status !== 404) {
+        ElMessage.error('删除评测记录失败: ' + (e.response?.data?.detail || e.message))
+      }
+      throw e
     }
   }
 
@@ -155,13 +162,14 @@ export const useGeoStore = defineStore('geo', () => {
     selectedPlatforms.value = []
   }
 
-  // ── 自动保存到 sessionStorage（防抖）──
+  // ── 自动保存到 sessionStorage（防抖 + 容量保护）──
+  const SESSION_STORAGE_MAX = 4 * 1024 * 1024  // 4MB 安全上限
   let _saveTimer = null
   function _scheduleSave() {
     clearTimeout(_saveTimer)
     _saveTimer = setTimeout(() => {
       try {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+        const payload = {
           currentStep: currentStep.value,
           originalText: originalText.value,
           cleanedText: cleanedText.value,
@@ -170,16 +178,29 @@ export const useGeoStore = defineStore('geo', () => {
           rewriteResults: rewriteResults.value,
           evaluationResult: evaluationResult.value,
           selectedPlatforms: selectedPlatforms.value,
-          projectHistory: projectHistory.value,
-        }))
-      } catch (e) { console.error('sessionStorage save failed:', e) }
+          projectHistory: projectHistory.value.slice(0, 20),
+        }
+        const serialized = JSON.stringify(payload)
+        if (serialized.length > SESSION_STORAGE_MAX) {
+          payload.rewriteResults = (payload.rewriteResults || []).map(r => ({
+            platform: r.platform,
+            optimized_text: (r.optimized_text || '').slice(0, 1000),
+            word_count: r.word_count,
+          }))
+          payload.evaluationResult = null
+          payload.projectHistory = (payload.projectHistory || []).slice(0, 5)
+        }
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+      } catch (e) {
+        console.error('sessionStorage save failed:', e)
+        try { sessionStorage.removeItem(STORAGE_KEY) } catch { /* full clear */ }
+      }
     }, 300)
   }
 
-  // 监听核心状态变化，自动保存
   const _watchTargets = [originalText, cleanedText, currentSandtableType,
     dimensions, rewriteResults, evaluationResult, selectedPlatforms]
-  _watchTargets.forEach(t => watch(t, _scheduleSave, { deep: true }))
+  _watchTargets.forEach(t => watch(t, _scheduleSave, { deep: false }))
 
   return {
     currentStep, originalText, cleanedText, currentSandtableType,

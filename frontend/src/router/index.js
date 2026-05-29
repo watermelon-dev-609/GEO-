@@ -36,13 +36,35 @@ const routes = [
         component: () => import('../views/ExportView.vue'),
         meta: { title: '成果导出' },
       },
+      {
+        path: 'strategy',
+        name: 'StrategyCenter',
+        component: () => import('../views/StrategyCenter.vue'),
+        meta: { title: '策略中心' },
+      },
+      {
+        path: 'templates',
+        name: 'ContentTemplates',
+        component: () => import('../views/ContentTemplates.vue'),
+        meta: { title: '内容规范' },
+      },
     ],
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('../views/NotFound.vue'),
+    meta: { title: '页面未找到' },
   },
 ]
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) return savedPosition
+    return { top: 0, behavior: 'smooth' }
+  },
 })
 
 export default router

@@ -14,6 +14,10 @@
                 <el-checkbox label="jsonld">JSON-LD结构化代码</el-checkbox>
                 <el-checkbox label="report">评测报告 (.html)</el-checkbox>
                 <el-checkbox label="report_pdf">评测报告 (.pdf)</el-checkbox>
+                <el-divider style="margin:8px 0;" />
+                <el-checkbox label="keywords">关键词清单 (.csv)</el-checkbox>
+                <el-checkbox label="standards">内容规范文档 (.md)</el-checkbox>
+                <el-checkbox label="competitors">竞品调研报告 (.md)</el-checkbox>
               </el-checkbox-group>
             </el-form-item>
 
@@ -65,11 +69,12 @@
 
       <el-col :span="16">
         <el-card shadow="never" v-if="exportedFiles.length === 0 && !isExporting" class="empty-card">
-          <div class="empty-state">
-            <el-icon :size="64" color="#c0c4cc"><Download /></el-icon>
-            <h3>选择导出内容，一键生成可落地成果</h3>
-            <p>优化文案、JSON-LD代码、评测报告全部就绪</p>
-          </div>
+          <el-empty description="" :image-size="120">
+            <template #default>
+              <h3 style="color:#6B6E7B;margin:0 0 8px;">选择导出内容，一键生成可落地成果</h3>
+              <p style="color:#9B9EAA;margin:0;">优化文案、JSON-LD代码、评测报告全部就绪</p>
+            </template>
+          </el-empty>
         </el-card>
 
         <div v-if="exportedFiles.length > 0">
@@ -144,8 +149,9 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useGeoStore } from '../stores/geo'
-import { generateJSONLD, generateReport, previewReport } from '../api'
+import { generateJSONLD, generateReport, previewReport, exportKeywordsCSV, generateCompetitorReport } from '../api'
 import { ElMessage } from 'element-plus'
+import { SANDTABLE_TYPES, scoreColor } from '../constants'
 
 const store = useGeoStore()
 
@@ -164,16 +170,7 @@ const previewDialogVisible = ref(false)
 const previewHtml = ref('')
 const previewLoading = ref(false)
 
-const sandtableTypes = [
-  { value: 'smart_traffic', label: '智慧交通沙盘' },
-  { value: 'smart_city', label: '智慧城市沙盘' },
-  { value: 'smart_industry', label: '智慧工业沙盘' },
-  { value: 'smart_agriculture', label: '智慧农业沙盘' },
-  { value: 'smart_logistics', label: '智慧物流沙盘' },
-  { value: 'military_terrain', label: '军事地形沙盘' },
-  { value: 'digital_multimedia', label: '数字多媒体沙盘' },
-  { value: 'real_estate', label: '地产/规划/展厅沙盘' },
-]
+const sandtableTypes = SANDTABLE_TYPES
 
 const hasCopy = computed(() => store.rewriteResults.length > 0)
 
@@ -243,6 +240,42 @@ async function startExport() {
       } catch (e) {
         ElMessage.warning('报告生成失败: ' + (e.response?.data?.detail || e.message))
       }
+    }
+
+    // 4. 关键词清单
+    if (exportItems.value.includes('keywords')) {
+      try {
+        const st = sandtableType.value || 'smart_traffic'
+        const res = await exportKeywordsCSV(st)
+        const blob = new Blob(['﻿' + res.data.csv], { type: 'text/csv;charset=utf-8;' })
+        const filename = `关键词清单_${st}.csv`
+        saveBlob(blob, filename)
+        exportedFiles.value.push({ name: filename, label: '关键词清单', type: 'copy', size: `${(blob.size / 1024).toFixed(1)} KB` })
+      } catch (e) { ElMessage.warning('关键词导出失败: ' + (e.response?.data?.detail || e.message)) }
+    }
+
+    // 5. 内容规范文档
+    if (exportItems.value.includes('standards')) {
+      try {
+        let content = '# GEO内容规范文档\n\n## 审核标准\n\n'
+        content += '### AI采信六原则\n\n1. 实体锚定：企业名、地域、产品名完整清晰\n2. 定义优先：专业概念给出权威定义\n3. 量化事实：所有能力用数字支撑\n4. FAQ结构：嵌入自然问答对\n5. 层级结构化：H2/H3+列表\n6. 信息增量：本地化细节+行业独特信息\n\n'
+        content += '### 写作规范\n\n- 每段200-300字，包含一个可独立提取的信息点\n- 标题使用H2/H3层级，列表使用•或-\n- 量化数据优先于形容词\n- 品牌名首次出现必须完整\n- 地域标识必须出现至少2次\n'
+        const blob = new Blob([content], { type: 'text/markdown;charset=utf-8;' })
+        const filename = 'GEO内容规范.md'
+        saveBlob(blob, filename)
+        exportedFiles.value.push({ name: filename, label: '内容规范', type: 'copy', size: `${(blob.size / 1024).toFixed(1)} KB` })
+      } catch (e) { ElMessage.warning('规范导出失败') }
+    }
+
+    // 6. 竞品调研报告
+    if (exportItems.value.includes('competitors')) {
+      try {
+        const res = await generateCompetitorReport({ competitor_ids: [] })
+        const blob = new Blob([res.data.report], { type: 'text/markdown;charset=utf-8;' })
+        const filename = '竞品调研报告.md'
+        saveBlob(blob, filename)
+        exportedFiles.value.push({ name: filename, label: '竞品报告', type: 'copy', size: `${(blob.size / 1024).toFixed(1)} KB` })
+      } catch (e) { ElMessage.warning('竞品报告导出失败: ' + (e.response?.data?.detail || e.message)) }
     }
 
     ElMessage.success(`导出完成！共 ${exportedFiles.value.length} 个文件`)
@@ -330,26 +363,21 @@ function saveBlob(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
-function scoreColor(score) {
-  if (score >= 80) return '#67C23A'
-  if (score >= 60) return '#E6A23C'
-  return '#F56C6C'
-}
 </script>
 
 <style scoped>
-.export-view { max-width: 1200px; }
-.page-title { font-size: 20px; margin-bottom: 20px; color: #303133; }
+.export-view { max-width: 1240px; }
+.page-title { font-size: 20px; margin-bottom: 20px; color: #2D3142; font-weight: 700; }
 .empty-card { min-height: 400px; display: flex; align-items: center; justify-content: center; }
-.empty-state { text-align: center; color: #909399; padding: 60px 0; }
-.empty-state h3 { margin: 16px 0 8px; color: #606266; }
+.empty-state { text-align: center; color: #9B9EAA; padding: 60px 0; }
+.empty-state h3 { margin: 16px 0 8px; color: #6B6E7B; }
 .exported-file { margin-bottom: 12px; }
 .exported-file .el-card__body { display: flex; justify-content: space-between; align-items: center; }
 .file-info { display: flex; align-items: center; gap: 12px; }
-.file-name { font-size: 14px; color: #303133; }
-.file-size { font-size: 12px; color: #909399; }
+.file-name { font-size: 14px; color: #2D3142; }
+.file-size { font-size: 12px; color: #9B9EAA; }
 .file-actions { display: flex; gap: 8px; }
-.jsonld-preview { background: #1d1e2c; color: #e5e5e5; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 12px; line-height: 1.6; max-height: 400px; }
+.jsonld-preview { background: #151721; color: #e5e5e5; padding: 16px; border-radius: 10px; overflow-x: auto; font-size: 12px; line-height: 1.6; max-height: 400px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .mini-score { font-size: 18px; margin-bottom: 8px; }
 </style>

@@ -12,9 +12,9 @@
       <el-menu
         :default-active="activeMenu"
         router
-        background-color="#1d1e2c"
-        text-color="#a0a4b8"
-        active-text-color="#409EFF"
+        background-color="#1E2030"
+        text-color="#B8BAC8"
+        active-text-color="#D4A855"
       >
         <el-menu-item index="/dashboard">
           <el-icon><HomeFilled /></el-icon>
@@ -35,6 +35,15 @@
         <el-menu-item index="/export">
           <el-icon><Download /></el-icon>
           <span>成果导出</span>
+        </el-menu-item>
+        <div class="menu-divider">策略中心</div>
+        <el-menu-item index="/strategy">
+          <el-icon><TrendCharts /></el-icon>
+          <span>策略中心</span>
+        </el-menu-item>
+        <el-menu-item index="/templates">
+          <el-icon><Document /></el-icon>
+          <span>内容规范</span>
         </el-menu-item>
       </el-menu>
 
@@ -86,7 +95,7 @@
               :key="step.path"
               class="pipeline-step"
               :class="{ active: i === activePipelineStep, done: i < activePipelineStep }"
-              @click="$router.push(step.path)"
+              @click="navigateToStep(step.path)"
             >
               <span class="step-dot">{{ i < activePipelineStep ? '✓' : i + 1 }}</span>
               <span class="step-label">{{ step.label }}</span>
@@ -109,18 +118,25 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
 import { getLLMConfig, healthCheck } from '../api'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 
 const route = useRoute()
+const router = useRouter()
 const store = useGeoStore()
 
 const activeMenu = computed(() => route.path)
 const currentPageTitle = computed(() => route.meta?.title || '')
 const hasConfiguredLLM = computed(() => store.configuredPlatforms.length > 0)
+
+function navigateToStep(path) {
+  if (route.path !== path) {
+    router.push(path)
+  }
+}
 
 // ── 流水线步骤指示器 ──
 const pipelineSteps = [
@@ -150,7 +166,9 @@ async function loadConfigForDialog() {
       apiKey: '',
       _saving: false,
     }))
-  } catch (e) { console.error('Config dialog load failed:', e) }
+  } catch (e) {
+    ElMessage.error('加载配置失败: ' + (e.response?.data?.detail || e.message))
+  }
 }
 
 async function saveApiKey(plat) {
@@ -181,7 +199,9 @@ onMounted(async () => {
   try {
     const res = await getLLMConfig()
     store.setLLMConfigs(res.data.llm_platforms || [])
-  } catch (e) { console.error('LayoutShell config init failed:', e) }
+  } catch (e) {
+    ElMessage.warning('LLM配置加载失败，请检查后端服务是否启动')
+  }
 })
 
 async function checkHealth() {
@@ -209,29 +229,158 @@ async function checkConfig() {
 
 <style scoped>
 .layout { height: 100vh; }
-.sidebar { background: #1d1e2c; overflow-y: auto; display: flex; flex-direction: column; }
-.logo { padding: 20px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #2d2e3c; }
-.logo-icon { font-size: 28px; }
-.logo-title { font-size: 15px; font-weight: bold; color: #fff; }
-.logo-sub { font-size: 11px; color: #909399; margin-top: 2px; }
-.sidebar .el-menu { border-right: none; flex: 1; }
-.sidebar-footer { padding: 12px 16px; border-top: 1px solid #2d2e3c; text-align: center; }
-.config-status { margin-bottom: 6px; }
-.version { font-size: 11px; color: #606266; }
-.topbar { background: #fff; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #ebeef5; padding: 0 24px; height: 56px; }
-.topbar-left { display: flex; align-items: center; gap: 32px; }
+.sidebar {
+  background: var(--geo-sidebar);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--geo-border-sidebar);
+}
+
+/* ── Logo ── */
+.logo {
+  padding: 22px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--geo-border-sidebar);
+}
+.logo-icon {
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--geo-primary), var(--geo-primary-dark));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  box-shadow: 0 2px 8px rgba(200, 150, 62, 0.25);
+}
+.logo-title { font-size: 15px; font-weight: 700; color: var(--geo-text-inverse); letter-spacing: 0.3px; }
+.logo-sub { font-size: 11px; color: var(--geo-text-sidebar); margin-top: 2px; }
+
+/* ── Menu ── */
+.sidebar .el-menu {
+  border-right: none;
+  flex: 1;
+  padding: 8px 0;
+}
+.sidebar :deep(.el-menu-item) {
+  margin: 2px 10px;
+  border-radius: 8px;
+  height: 42px;
+  line-height: 42px;
+  font-size: 14px;
+  transition: all var(--geo-transition-fast);
+}
+.sidebar :deep(.el-menu-item:hover) {
+  background: var(--geo-sidebar-hover) !important;
+}
+.sidebar :deep(.el-menu-item.is-active) {
+  background: var(--geo-sidebar-active) !important;
+  color: var(--geo-text-sidebar-active) !important;
+  font-weight: 600;
+}
+.sidebar :deep(.el-menu-item .el-icon) { font-size: 17px; }
+
+/* divider label */
+.sidebar :deep(.menu-divider) {
+  padding: 8px 20px;
+  font-size: 10px;
+  color: var(--geo-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  font-weight: 600;
+}
+
+/* ── Footer ── */
+.sidebar-footer {
+  padding: 14px 16px;
+  border-top: 1px solid var(--geo-border-sidebar);
+  text-align: center;
+}
+.config-status { margin-bottom: 8px; }
+.version { font-size: 10px; color: var(--geo-text-muted); margin-top: 8px; letter-spacing: 0.5px; }
+
+/* ── Topbar ── */
+.topbar {
+  background: var(--geo-surface);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  height: 58px;
+  border-bottom: 1px solid var(--geo-border);
+  box-shadow: 0 1px 3px rgba(45, 49, 66, 0.03);
+  position: relative;
+  z-index: 10;
+}
+.topbar-left { display: flex; align-items: center; gap: 36px; }
 .topbar-right { display: flex; gap: 8px; }
+
+/* ── Pipeline ── */
 .pipeline-steps { display: flex; align-items: center; }
-.pipeline-step { display: flex; align-items: center; cursor: pointer; font-size: 12px; color: #c0c4cc; white-space: nowrap; transition: color 0.2s; }
-.pipeline-step.active { color: #409EFF; font-weight: bold; }
-.pipeline-step.done { color: #67C23A; }
-.step-dot { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; margin-right: 4px; border: 1.5px solid currentColor; }
-.pipeline-step.active .step-dot { background: #409EFF; color: #fff; border-color: #409EFF; }
-.pipeline-step.done .step-dot { background: #67C23A; color: #fff; border-color: #67C23A; }
-.step-line { display: inline-block; width: 20px; height: 1.5px; background: #dcdfe6; margin: 0 6px; }
-.pipeline-step.done .step-line { background: #67C23A; }
-.main-content { background: #f5f7fa; padding: 24px; overflow-y: auto; }
-.config-plat-row { margin-bottom: 16px; padding: 12px; background: #fafafa; border-radius: 8px; border: 1px solid #ebeef5; }
-.config-plat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.config-plat-name { font-weight: bold; font-size: 14px; }
+.pipeline-step {
+  display: flex; align-items: center;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--geo-text-muted);
+  white-space: nowrap;
+  transition: all var(--geo-transition);
+  font-weight: 500;
+}
+.pipeline-step.active { color: var(--geo-primary); font-weight: 700; }
+.pipeline-step.done { color: var(--geo-success); }
+.step-dot {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  font-size: 10px;
+  margin-right: 5px;
+  border: 1.5px solid currentColor;
+  transition: all var(--geo-transition);
+}
+.pipeline-step.active .step-dot {
+  background: var(--geo-primary);
+  color: #fff;
+  border-color: var(--geo-primary);
+  box-shadow: 0 2px 6px rgba(200, 150, 62, 0.3);
+}
+.pipeline-step.done .step-dot {
+  background: var(--geo-success);
+  color: #fff;
+  border-color: var(--geo-success);
+}
+.step-line {
+  display: inline-block;
+  width: 22px;
+  height: 1.5px;
+  background: #d5d2cc;
+  margin: 0 7px;
+  transition: background var(--geo-transition);
+}
+.pipeline-step.done ~ .pipeline-step .step-line,
+.pipeline-step.done .step-line { background: var(--geo-success); }
+
+/* ── Main Content ── */
+.main-content {
+  background: var(--geo-bg);
+  padding: 28px 28px 40px;
+  overflow-y: auto;
+}
+
+/* ── Config Dialog ── */
+.config-plat-row {
+  margin-bottom: 16px;
+  padding: 14px;
+  background: var(--geo-surface-hover);
+  border-radius: var(--geo-radius);
+  border: 1px solid var(--geo-border);
+  transition: border-color var(--geo-transition-fast);
+}
+.config-plat-row:hover { border-color: var(--geo-primary-border); }
+.config-plat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.config-plat-name { font-weight: 600; font-size: 14px; color: var(--geo-text); }
 </style>

@@ -19,9 +19,9 @@ class WenxinAdapter(BaseLLMAdapter):
     def platform_name(self) -> str:
         return "wenxin"
 
-    async def _get_access_token(self) -> str:
+    async def _get_access_token(self, force_refresh: bool = False) -> str:
         """获取百度OAuth access_token"""
-        if self._access_token:
+        if self._access_token and not force_refresh:
             return self._access_token
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
@@ -52,7 +52,7 @@ class WenxinAdapter(BaseLLMAdapter):
                 return ep
         return "completions"
 
-    async def _request(self, messages: list[LLMMessage], temperature: float, stream: bool) -> dict:
+    async def _request(self, messages: list[LLMMessage], temperature: float, stream: bool, max_tokens: int = 4096, _retry_token: bool = True) -> dict:
         token = await self._get_access_token()
         endpoint = self._model_endpoint()
         url = f"{self._base_url}/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/{endpoint}?access_token={token}"
@@ -61,10 +61,15 @@ class WenxinAdapter(BaseLLMAdapter):
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "temperature": temperature,
             "stream": stream,
+            "max_output_tokens": max_tokens,
         }
 
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(url, json=payload)
+            if resp.status_code == 401 and _retry_token:
+                token = await self._get_access_token(force_refresh=True)
+                url = f"{self._base_url}/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/{endpoint}?access_token={token}"
+                resp = await client.post(url, json=payload)
             resp.raise_for_status()
             return resp.json()
 
@@ -75,7 +80,7 @@ class WenxinAdapter(BaseLLMAdapter):
         max_tokens: int = 4096,
         **kwargs,
     ) -> LLMResponse:
-        data = await self._request(messages, temperature, stream=False)
+        data = await self._request(messages, temperature, stream=False, max_tokens=max_tokens)
         return LLMResponse(
             content=data.get("result", ""),
             model=self.model_name,
@@ -98,21 +103,26 @@ class WenxinAdapter(BaseLLMAdapter):
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "temperature": temperature,
             "stream": True,
+            "max_output_tokens": max_tokens,
         }
 
         async with httpx.AsyncClient(timeout=300) as client:
-            async with client.stream("POST", url, json=payload) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if line.startswith("data: "):
-                        data_str = line[6:]
-                        import json
-                        try:
-                            chunk = json.loads(data_str)
-                            if "result" in chunk and chunk["result"]:
-                                yield chunk["result"]
-                        except json.JSONDecodeError:
-                            continue
+            resp = await client.send(client.build_request("POST", url, json=payload), stream=True)
+            if resp.status_code == 401:
+                token = await self._get_access_token(force_refresh=True)
+                url = f"{self._base_url}/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/{endpoint}?access_token={token}"
+                resp = await client.send(client.build_request("POST", url, json=payload), stream=True)
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if line.startswith("data: "):
+                    data_str = line[6:]
+                    import json
+                    try:
+                        chunk = json.loads(data_str)
+                        if "result" in chunk and chunk["result"]:
+                            yield chunk["result"]
+                    except json.JSONDecodeError:
+                        continue
 
     async def is_available(self) -> bool:
         try:

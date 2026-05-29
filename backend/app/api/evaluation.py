@@ -5,7 +5,7 @@ import json
 import logging
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from app.models.schemas import EvalStartRequest
+from app.models.schemas import EvalStartRequest, CompareEvaluationsRequest, QuickBrandCheckRequest
 from app.models.enums import AIPlatform, EvalPhase
 from app.core.evaluator import AIEvaluator
 from app.core.eval_session import EvalSession
@@ -47,9 +47,13 @@ def _get_evaluator(with_llm: bool = True):
 @router.post("/start")
 async def start_evaluation(req: EvalStartRequest):
     """启动评测 — SSE 流式返回阶段事件"""
+    # 短文本校验
+    if not req.optimized_text or len(req.optimized_text.strip()) < 50:
+        raise HTTPException(status_code=400, detail="输入文本过短（少于50字），无法进行有效评测")
+
     evaluator = _get_evaluator(with_llm=True)
 
-    session = EvalSession(sandtable_type=req.sandtable_type, mode=req.mode)
+    session = await EvalSession.create(sandtable_type=req.sandtable_type, mode=req.mode)
     session.evaluated_text = req.optimized_text
     session.original_text = req.original_text or ""
     session.platforms = req.platforms
@@ -79,6 +83,12 @@ async def start_evaluation(req: EvalStartRequest):
             ):
                 yield event_str
                 await asyncio.sleep(0.01)
+        except asyncio.CancelledError:
+            session.mark_cancelled()
+            raise
+        except GeneratorExit:
+            session.cancel()
+            session.mark_cancelled()
         except Exception as e:
             logger.exception(f"SSE stream error for session {session.session_id}")
             error_event = f"event: eval_error\ndata: {json.dumps({'session_id': session.session_id, 'error': str(e)}, ensure_ascii=False)}\n\n"
@@ -99,7 +109,7 @@ async def start_evaluation(req: EvalStartRequest):
 @router.get("/session/{session_id}")
 async def get_session(session_id: str):
     """查询会话状态（断线恢复）"""
-    session = EvalSession.get(session_id)
+    session = await EvalSession.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
     return session.to_dict()
@@ -108,7 +118,7 @@ async def get_session(session_id: str):
 @router.post("/cancel/{session_id}")
 async def cancel_evaluation(session_id: str):
     """取消评测"""
-    session = EvalSession.get(session_id)
+    session = await EvalSession.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
     session.cancel()
@@ -136,7 +146,7 @@ async def get_history():
 
     # 合并内存中的session（可能有未落盘的新会话）
     seen_ids = {s.get("session_id") for s in disk_sessions}
-    memory_sessions = EvalSession.list_all()
+    memory_sessions = await EvalSession.list_all()
     for s in memory_sessions:
         if s.session_id not in seen_ids and s.status in ("completed", "cancelled", "failed"):
             # 内存中的会话但磁盘没有，立即保存
@@ -166,7 +176,7 @@ async def get_history():
 @router.get("/history/{session_id}")
 async def get_history_detail(session_id: str):
     """历史评测详情"""
-    session = EvalSession.get(session_id)
+    session = await EvalSession.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"评测记录不存在: {session_id}")
     return session.to_dict()
@@ -178,11 +188,7 @@ async def delete_history(session_id: str):
     from app.core.eval_history_store import delete_session as del_session
 
     # 也清理内存中的session
-    mem = EvalSession.get(session_id)
-    if mem:
-        import gc
-        from app.core.eval_session import _sessions
-        _sessions.pop(session_id, None)
+    await EvalSession.remove(session_id)
 
     if not del_session(session_id):
         raise HTTPException(status_code=404, detail=f"评测记录不存在: {session_id}")
@@ -190,10 +196,10 @@ async def delete_history(session_id: str):
 
 
 @router.post("/history/compare")
-async def compare_evaluations(req: dict):
+async def compare_evaluations(req: CompareEvaluationsRequest):
     """对比两次评测"""
     from app.core.eval_history_store import load_session
-    ids = req.get("session_ids", [])
+    ids = req.session_ids
     if len(ids) != 2:
         raise HTTPException(status_code=400, detail="请提供2个session_id")
 
@@ -281,18 +287,13 @@ async def get_preset_questions():
 
 
 @router.post("/quick-brand-check")
-async def quick_brand_check(req: dict):
+async def quick_brand_check(req: QuickBrandCheckRequest):
     """快速品牌曝光检测（无需LLM，纯向量计算）"""
     try:
         from app.services.embedding_svc import EmbeddingService
 
-        text = req.get("text", "")
-        brand_keywords = req.get("brand_keywords", [
-            "武汉微艺达",
-            "微艺达智能科技",
-            "武汉沙盘定制",
-            "沙盘模型厂家",
-        ])
+        text = req.text
+        brand_keywords = req.brand_keywords
 
         emb_svc = EmbeddingService()
         text_vec = emb_svc.encode_single(text)

@@ -33,6 +33,40 @@
                 <el-alert title="文件内容已读取" type="success" :closable="false" />
               </div>
             </el-tab-pane>
+            <el-tab-pane label="快速诊断" name="diagnosis">
+              <el-input
+                v-model="diagText"
+                type="textarea"
+                :rows="10"
+                placeholder="粘贴需要诊断的官网文案、产品介绍、宣传内容等..."
+              />
+              <el-select v-model="diagSandtable" placeholder="沙盘类型（可选）" clearable size="small" style="width:100%;margin-top:12px;">
+                <el-option v-for="t in sandtableTypes" :key="t.value" :label="t.label" :value="t.value" />
+              </el-select>
+              <el-button type="warning" size="small" :loading="diagLoading" @click="startDiagnosis" style="width:100%;margin-top:12px;">
+                {{ diagLoading ? '正在诊断...' : 'GEO健康体检' }}
+              </el-button>
+              <div v-if="diagResult" class="diag-result" style="margin-top:16px;">
+                <div class="diag-score-row">
+                  <span class="diag-overall">{{ diagResult.overall_score }}<small>/100</small></span>
+                  <el-tag :type="diagResult.overall_score >= 70 ? 'success' : diagResult.overall_score >= 40 ? 'warning' : 'danger'" size="large">GEO健康度</el-tag>
+                </div>
+                <div v-for="(dim, key) in diagResult.dimensions" :key="key" class="diag-dim">
+                  <div class="diag-dim-header">
+                    <span>{{ dimLabels[key] || key }}</span>
+                    <span :style="{ color: dim.score >= 70 ? '#5B8C5A' : dim.score >= 40 ? '#D4956A' : '#C5554A', fontWeight:'bold' }">{{ dim.score }}分</span>
+                  </div>
+                  <el-progress :percentage="dim.score" :color="dim.score >= 70 ? '#5B8C5A' : dim.score >= 40 ? '#D4956A' : '#C5554A'" :stroke-width="6" />
+                  <div class="diag-dim-note" v-if="dim.note">{{ dim.note }}</div>
+                </div>
+                <div v-if="diagResult.top_issues?.length" style="margin-top:12px;">
+                  <el-alert v-for="(issue, i) in diagResult.top_issues" :key="i" :title="issue" type="warning" show-icon :closable="false" style="margin-bottom:6px;" />
+                </div>
+                <el-button type="primary" size="small" style="margin-top:12px;" @click="goDiagnosisToWorkshop" :disabled="!cleanedText && !rawText">
+                  一键优化 → GEO工坊
+                </el-button>
+              </div>
+            </el-tab-pane>
           </el-tabs>
 
           <div style="margin-top: 16px;">
@@ -71,7 +105,7 @@
               <span>清洗结果</span>
               <div v-if="cleanedText">
                 <el-tag type="success" size="small">清洗完成</el-tag>
-                <span style="margin-left: 8px; font-size: 12px; color: #909399;">
+                <span style="margin-left: 8px; font-size: 12px; color: #9B9EAA;">
                   字数: {{ rawText.length }} → {{ cleanedText.length }}
                 </span>
               </div>
@@ -79,8 +113,7 @@
           </template>
 
           <div v-if="!cleanedText" class="empty-state">
-            <el-icon :size="48" color="#c0c4cc"><Document /></el-icon>
-            <p>导入文案并点击清洗后，结果将显示在这里</p>
+            <el-empty description="导入文案并点击清洗后，结果将显示在这里" :image-size="80" />
           </div>
 
           <div v-else>
@@ -129,7 +162,7 @@
           <el-collapse>
             <el-collapse-item v-for="dim in dimList" :key="dim.key" :title="`${dim.label} (${(dimensions[dim.key] || []).length}条)`">
               <el-tag v-for="(item, i) in (dimensions[dim.key] || [])" :key="i" style="margin: 2px 4px;">{{ item }}</el-tag>
-              <span v-if="!dimensions[dim.key]?.length" style="color: #909399;">暂无数据</span>
+              <span v-if="!dimensions[dim.key]?.length" style="color: #9B9EAA;">暂无数据</span>
             </el-collapse-item>
           </el-collapse>
         </el-card>
@@ -148,8 +181,9 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
-import { cleanText, extractInfo } from '../api'
+import { cleanText, extractInfo, quickDiagnosis } from '../api'
 import { ElMessage } from 'element-plus'
+import { SANDTABLE_TYPES, DIAGNOSIS_LABELS } from '../constants'
 
 const router = useRouter()
 const store = useGeoStore()
@@ -169,16 +203,7 @@ const changePercent = computed(() => {
   return Math.round((1 - cleanedText.value.length / beforeText.value.length) * 100)
 })
 
-const sandtableTypes = [
-  { value: 'smart_traffic', label: '智慧交通沙盘' },
-  { value: 'smart_city', label: '智慧城市沙盘' },
-  { value: 'smart_industry', label: '智慧工业沙盘' },
-  { value: 'smart_agriculture', label: '智慧农业沙盘' },
-  { value: 'smart_logistics', label: '智慧物流沙盘' },
-  { value: 'military_terrain', label: '军事地形沙盘' },
-  { value: 'digital_multimedia', label: '数字多媒体沙盘' },
-  { value: 'real_estate', label: '地产/规划/展厅沙盘' },
-]
+const sandtableTypes = SANDTABLE_TYPES
 
 const dimList = [
   { key: 'core_advantages', label: '核心优势' },
@@ -257,22 +282,73 @@ async function startCleaning() {
 function goToWorkshop() {
   router.push('/workshop')
 }
+
+// ── 快速诊断 ──
+const diagText = ref('')
+const diagSandtable = ref('')
+const diagLoading = ref(false)
+const diagResult = ref(null)
+const dimLabels = DIAGNOSIS_LABELS
+
+async function startDiagnosis() {
+  if (!diagText.value.trim()) { ElMessage.warning('请粘贴需要诊断的文本'); return }
+  diagLoading.value = true
+  try {
+    const res = await quickDiagnosis({ text: diagText.value, sandtable_type: diagSandtable.value })
+    diagResult.value = res.data
+    // 把诊断文本同步到 rawText，方便后续一键优化
+    rawText.value = diagText.value
+    ElMessage.success(`GEO健康度: ${res.data.overall_score}/100`)
+  } catch (e) {
+    ElMessage.error('诊断失败: ' + (e.response?.data?.detail || e.message))
+  } finally { diagLoading.value = false }
+}
+
+async function goDiagnosisToWorkshop() {
+  if (!cleanedText.value && rawText.value) {
+    store.setOriginalText(rawText.value)
+    store.setSandtableType(diagSandtable.value)
+    try {
+      const res = await cleanText({
+        content: rawText.value,
+        sandtable_type: diagSandtable.value || undefined,
+        extract_dimensions: true,
+      })
+      cleanedText.value = res.data.cleaned_text
+      dimensions.value = res.data.dimensions
+      detectedType.value = res.data.detected_type
+      store.setCleanedText(res.data.cleaned_text)
+      store.setDimensions(res.data.dimensions)
+      if (res.data.detected_type) store.setSandtableType(res.data.detected_type)
+    } catch (e) {
+      ElMessage.warning('诊断完成但清洗失败: ' + (e.response?.data?.detail || e.message))
+    }
+  }
+  router.push('/workshop')
+}
 </script>
 
 <style scoped>
-.import-view { max-width: 1200px; }
-.page-title { font-size: 20px; margin-bottom: 20px; color: #303133; }
+.import-view { max-width: 1240px; }
+.page-title { font-size: 20px; margin-bottom: 20px; color: #2D3142; font-weight: 700; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
-.empty-state { text-align: center; padding: 48px 0; color: #909399; }
+.empty-state { text-align: center; padding: 48px 0; color: #9B9EAA; }
 .empty-state p { margin-top: 12px; }
-.cleaned-text { max-height: 400px; overflow-y: auto; white-space: pre-wrap; line-height: 1.8; font-size: 14px; background: #fafafa; padding: 16px; border-radius: 8px; }
-.original-text { max-height: 400px; overflow-y: auto; white-space: pre-wrap; line-height: 1.8; font-size: 14px; background: #fff7e6; padding: 16px; border-radius: 8px; color: #909399; }
-.clean-summary { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 10px 14px; background: #f0f9eb; border-radius: 8px; }
-.clean-stat { font-size: 14px; color: #303133; }
+.cleaned-text { max-height: 400px; overflow-y: auto; white-space: pre-wrap; line-height: 1.8; font-size: 14px; background: #FAF8F5; padding: 16px; border-radius: 10px; }
+.original-text { max-height: 400px; overflow-y: auto; white-space: pre-wrap; line-height: 1.8; font-size: 14px; background: rgba(212,149,106,0.06); padding: 16px; border-radius: 10px; color: #9B9EAA; }
+.clean-summary { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 10px 14px; background: rgba(91,140,90,0.06); border-radius: 10px; }
+.clean-stat { font-size: 14px; color: #2D3142; }
 .diff-row { margin-top: 8px; }
-.diff-label { font-size: 13px; font-weight: bold; color: #606266; margin-bottom: 8px; }
-.diff-text { white-space: pre-wrap; font-size: 13px; line-height: 1.7; padding: 12px; border-radius: 8px; max-height: 500px; overflow-y: auto; }
-.diff-text.original { background: #fff7e6; color: #909399; }
-.diff-text.cleaned { background: #f0f9eb; color: #303133; }
+.diff-label { font-size: 13px; font-weight: bold; color: #6B6E7B; margin-bottom: 8px; }
+.diff-text { white-space: pre-wrap; font-size: 13px; line-height: 1.7; padding: 12px; border-radius: 10px; max-height: 500px; overflow-y: auto; }
+.diff-text.original { background: rgba(212,149,106,0.06); color: #9B9EAA; }
+.diff-text.cleaned { background: rgba(91,140,90,0.06); color: #2D3142; }
 .file-preview { margin-top: 12px; }
+.diag-result { padding: 12px; background: #FAF8F5; border-radius: 10px; }
+.diag-score-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.diag-overall { font-size: 42px; font-weight: bold; color: #C8963E; }
+.diag-overall small { font-size: 16px; color: #9B9EAA; }
+.diag-dim { margin-bottom: 10px; }
+.diag-dim-header { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 2px; }
+.diag-dim-note { font-size: 11px; color: #9B9EAA; margin-top: 2px; }
 </style>

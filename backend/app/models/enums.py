@@ -102,9 +102,14 @@ class UserRole(str, Enum):
 
 class EvalDimension(str, Enum):
     """评测维度"""
-    BRAND_RECALL = "brand_recall"           # 品牌召回率
-    SOLUTION_MATCH = "solution_match"       # 方案匹配度
-    ADVANTAGE_CITATION = "advantage_citation"  # 优势采信率
+    BRAND_RECALL = "brand_recall"              # 品牌召回率
+    SOLUTION_MATCH = "solution_match"          # 方案匹配度
+    ADVANTAGE_CITATION = "advantage_citation"   # 优势采信率
+    REAL_CITATION = "real_citation"            # 真实采信率
+    STRUCTURE_QUALITY = "structure_quality"    # 结构化程度
+    DIFFERENTIATION = "differentiation"        # 差异化程度
+    SOURCE_CONSISTENCY = "source_consistency"  # 信源一致性
+    EEAT_SCORE = "eeat_score"                # E-E-A-T权威度
 
 
 class ContentFormat(str, Enum):
@@ -136,6 +141,7 @@ class EvalPhase(str, Enum):
     REAL_CITATION = "real_citation"
     STRUCTURE_QUALITY = "structure_quality"
     DIFFERENTIATION = "differentiation"
+    EEAT_CHECK = "eeat_check"
     SOURCE_CHECK = "source_check"
     COMPREHENSIVE = "comprehensive"
 
@@ -149,6 +155,7 @@ class EvalPhase(str, Enum):
             "real_citation": "真实采信率",
             "structure_quality": "结构化程度",
             "differentiation": "差异化程度",
+            "eeat_check": "E-E-A-T权威度",
             "source_check": "信源一致性",
             "comprehensive": "综合评分",
         }
@@ -165,8 +172,9 @@ class EvalPhase(str, Enum):
             "real_citation": 4,
             "structure_quality": 5,
             "differentiation": 6,
-            "source_check": 7,
-            "comprehensive": 8,
+            "eeat_check": 7,
+            "source_check": 8,
+            "comprehensive": 9,
         }
         return order_map[self.value]
 

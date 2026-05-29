@@ -60,6 +60,8 @@ class RewriteRequest(BaseModel):
     platforms: list[AIPlatform] = Field(..., description="目标AI平台列表")
     dimensions: Optional[dict] = Field(default=None, description="五维信息（可选，用于强化）")
     optimization_hints: list[str] = Field(default_factory=list, description="优化提示（如评测建议）")
+    inject_competitors: bool = Field(default=False, description="是否自动注入竞品差异化洞察")
+    competitor_insights: Optional[str] = Field(default=None, description="竞品差异化洞察文本")
     enterprise_name: str = Field(default="武汉微艺达智能科技有限公司")
     enterprise_location: str = Field(default="武汉")
 
@@ -207,3 +209,111 @@ class EvalHistoryItem(BaseModel):
     overall_score: float | None = None
     created_at: str = ""
     mode: str = "pipeline"
+
+
+# ── 平台监测 ──
+
+class PlatformRulesUpdateRequest(BaseModel):
+    summary: str = Field(default="")
+    details: list[str] = Field(default_factory=list)
+    status: str = Field(default="normal")
+    impact: str = Field(default="")
+    response: str = Field(default="")
+
+
+# ── 关键词库 ──
+
+class KeywordAddRequest(BaseModel):
+    word: str = Field(..., min_length=1, description="关键词文本")
+    category: str = Field(default="scene")
+    weight: str = Field(default="core")
+    status: str = Field(default="pending")
+
+class KeywordUpdateRequest(BaseModel):
+    weight: str | None = Field(default=None)
+    status: str | None = Field(default=None)
+    word_new: str | None = Field(default=None, min_length=1)
+
+class KeywordExpandRequest(BaseModel):
+    seed: str = Field(default="")
+
+
+# ── 竞品调研 ──
+
+class CompetitorCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, description="竞品名称")
+    website: str = Field(default="")
+    industry: str = Field(default="")
+    notes: str = Field(default="")
+    platform_exposure: dict = Field(default_factory=dict)
+    content_features: dict = Field(default_factory=dict)
+
+class CompetitorUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1)
+    website: str | None = None
+    industry: str | None = None
+    notes: str | None = None
+    platform_exposure: dict | None = None
+    content_features: dict | None = None
+
+class SnapshotAddRequest(BaseModel):
+    date: str = Field(default="")
+    platform: str = Field(default="")
+    query: str = Field(default="")
+    citation_found: bool = Field(default=False)
+    citation_snippet: str = Field(default="")
+    notes: str = Field(default="")
+
+class CompetitorCompareRequest(BaseModel):
+    competitor_ids: list[str] = Field(..., min_length=2, description="至少选择2个竞品")
+    include_llm: bool = Field(default=False)
+    sandtable_type: str = Field(default="")
+
+class CompetitorReportRequest(BaseModel):
+    competitor_ids: list[str] = Field(..., min_length=1, description="至少选择1个竞品")
+
+
+# ── 报表 ──
+
+class ReportGenerateFromDataRequest(BaseModel):
+    format: str = Field(default="html")
+    include_charts: bool = Field(default=True)
+
+
+# ── 内容诊断 ──
+
+class QuickDiagnosisRequest(BaseModel):
+    text: str = Field(..., min_length=1, description="待诊断文本")
+    sandtable_type: str = Field(default="")
+
+class DeepDiagnosisRequest(BaseModel):
+    text: str = Field(..., min_length=1, description="待诊断文本")
+    sandtable_type: str = Field(default="")
+
+class BatchDiagnosisRequest(BaseModel):
+    texts: list[str] = Field(..., min_length=1, description="待诊断文本列表")
+    sandtable_type: str = Field(default="")
+
+
+# ── 评测 ──
+
+class CompareEvaluationsRequest(BaseModel):
+    session_ids: list[str] = Field(..., min_length=2, max_length=2, description="需恰好2个session_id")
+
+class QuickBrandCheckRequest(BaseModel):
+    text: str = Field(..., min_length=1, description="待检测文本")
+    brand_keywords: list[str] = Field(default_factory=lambda: ["武汉微艺达", "微艺达智能科技", "武汉沙盘定制", "沙盘模型厂家"])
+
+
+# ── JSON-LD ──
+
+class JSONLDValidateRequest(BaseModel):
+    json_ld: str = Field(..., min_length=1, description="JSON-LD代码字符串")
+
+
+# ── 配置 ──
+
+class LLMConfigUpdateRequest(BaseModel):
+    platform: str = Field(..., min_length=1, description="平台标识")
+    api_key: str = Field(..., min_length=1, description="API Key")
+    secret_key: str = Field(default="")

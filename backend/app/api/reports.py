@@ -7,7 +7,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
-from app.models.schemas import ReportRequest, ReportResponse
+from app.models.schemas import ReportRequest, ReportResponse, ReportGenerateFromDataRequest
 from app.core.reporter import ReportGenerator
 from app.utils.config import get_data_dir
 
@@ -15,15 +15,14 @@ router = APIRouter()
 
 
 @router.post("/preview")
-async def preview_report(data: dict):
+async def preview_report(data: ReportGenerateFromDataRequest):
     """生成报告HTML并返回内嵌内容（非文件下载）"""
     try:
         gen = ReportGenerator()
-        report_format = data.get("format", "html")
         result = gen.generate(
-            evaluation_data=data,
-            output_format=report_format,
-            include_charts=data.get("include_charts", True),
+            evaluation_data=data.model_dump(),
+            output_format=data.format,
+            include_charts=data.include_charts,
         )
         html_path = result["file_path"]
         with open(html_path, "r", encoding="utf-8") as f:
@@ -59,19 +58,18 @@ async def generate_report(req: ReportRequest):
 
 
 @router.post("/generate-from-data", response_model=ReportResponse)
-async def generate_report_from_data(data: dict):
+async def generate_report_from_data(data: ReportGenerateFromDataRequest):
     """直接传入评测数据生成报表"""
     try:
         gen = ReportGenerator()
-        report_format = data.get("format", "html")
         result = gen.generate(
-            evaluation_data=data,
-            output_format=report_format,
-            include_charts=data.get("include_charts", True),
+            evaluation_data=data.model_dump(),
+            output_format=data.format,
+            include_charts=data.include_charts,
         )
         return ReportResponse(
             report_id=result["report_id"],
-            format=report_format,
+            format=data.format,
             file_path=result["file_path"],
             created_at=datetime.fromisoformat(result["created_at"]) if isinstance(result["created_at"], str) else result["created_at"],
         )

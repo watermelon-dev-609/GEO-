@@ -84,7 +84,7 @@
               </div>
               <div v-if="dimensionConfigs.some(d => d.enabled)" class="weight-summary" :class="{ invalid: !weightValid }">
                 权重合计: {{ weightSum }}%
-                <span v-if="!weightValid" style="color: #F56C6C; margin-left: 4px;">（需为100%）</span>
+                <span v-if="!weightValid" style="color: #C5554A; margin-left: 4px;">（需为100%）</span>
               </div>
             </el-form-item>
 
@@ -154,10 +154,10 @@
               :class="{ 'is-active': phase.status === 'running' }"
             >
               <div class="phase-icon">
-                <el-icon v-if="phase.status === 'completed'" color="#67C23A"><CircleCheckFilled /></el-icon>
-                <el-icon v-else-if="phase.status === 'running'" color="#409EFF" class="is-loading"><Loading /></el-icon>
-                <el-icon v-else-if="phase.status === 'failed'" color="#F56C6C"><CircleCloseFilled /></el-icon>
-                <el-icon v-else-if="phase.status === 'skipped'" color="#909399"><RemoveFilled /></el-icon>
+                <el-icon v-if="phase.status === 'completed'" color="#5B8C5A"><CircleCheckFilled /></el-icon>
+                <el-icon v-else-if="phase.status === 'running'" color="#C8963E" class="is-loading"><Loading /></el-icon>
+                <el-icon v-else-if="phase.status === 'failed'" color="#C5554A"><CircleCloseFilled /></el-icon>
+                <el-icon v-else-if="phase.status === 'skipped'" color="#9B9EAA"><RemoveFilled /></el-icon>
                 <el-icon v-else color="#c0c4cc"><Clock /></el-icon>
               </div>
               <div class="phase-info">
@@ -205,7 +205,7 @@
                 {{ sourceConsistencyScore >= 90 ? '信源可靠' : sourceConsistencyScore >= 70 ? '存在少量未经证实的信息' : '信源一致性偏低' }}
               </el-tag>
               <span style="margin-left: 12px; font-size: 24px; font-weight: bold;" :style="{ color: scoreColor(sourceConsistencyScore) }">{{ sourceConsistencyScore }}分</span>
-              <p style="margin-top: 8px; font-size: 13px; color: #909399;">
+              <p style="margin-top: 8px; font-size: 13px; color: #9B9EAA;">
                 {{ sourceConsistencyScore >= 90 ? '生成文本与企业官方信源高度一致，AI引用风险低' : sourceConsistencyScore >= 70 ? '部分内容可能偏离企业官方信源，建议核实后重新优化' : '文本中存在较多与信源不一致的信息，AI可能引用到编造的内容，强烈建议重新优化' }}
               </p>
             </div>
@@ -258,9 +258,9 @@
 
           <!-- 一键采纳 -->
           <div v-if="suggestions.length > 0" style="margin-top: 16px;">
-            <el-card shadow="never" style="background: #ecf5ff; border-color: #409EFF;">
+            <el-card shadow="never" style="background: #ecf5ff; border-color: #C8963E;">
               <div style="text-align: center;">
-                <p style="font-size: 15px; color: #303133; margin-bottom: 12px;">
+                <p style="font-size: 15px; color: #2D3142; margin-bottom: 12px;">
                   检测到 <strong>{{ suggestions.length }}</strong> 条优化建议，一键采纳全部并返回工坊重新优化
                 </p>
                 <el-button type="primary" size="large" @click="applyAllAndReoptimize">
@@ -284,7 +284,7 @@
     <el-drawer v-model="historyDrawerVisible" title="评测历史" size="480px" direction="rtl">
       <div v-if="historyItems.length === 0" class="history-empty">
         <el-icon :size="48" color="#c0c4cc"><Clock /></el-icon>
-        <p style="margin-top: 12px; color: #909399;">暂无评测历史</p>
+        <p style="margin-top: 12px; color: #9B9EAA;">暂无评测历史</p>
       </div>
       <div v-else>
         <div v-for="item in historyItems" :key="item.session_id" class="history-item">
@@ -355,12 +355,12 @@
           <el-col :span="2" style="display:flex;align-items:center;justify-content:center;">
             <div>
               <div v-for="(delta, key) in compareData.deltas" :key="key" style="margin:2px 0;font-size:12px;text-align:center;">
-                <span :style="{ color: delta > 0 ? '#67C23A' : delta < 0 ? '#F56C6C' : '#909399' }">
+                <span :style="{ color: delta > 0 ? '#5B8C5A' : delta < 0 ? '#C5554A' : '#9B9EAA' }">
                   {{ delta > 0 ? '+' : '' }}{{ delta }}
                 </span>
               </div>
               <div style="font-weight:bold;text-align:center;margin-top:4px;">
-                <span :style="{ color: compareData.overall_delta > 0 ? '#67C23A' : compareData.overall_delta < 0 ? '#F56C6C' : '#909399' }">
+                <span :style="{ color: compareData.overall_delta > 0 ? '#5B8C5A' : compareData.overall_delta < 0 ? '#C5554A' : '#9B9EAA' }">
                   {{ compareData.overall_delta > 0 ? '+' : '' }}{{ compareData.overall_delta }}
                 </span>
               </div>
@@ -703,9 +703,9 @@ async function cancelEval() {
 
 // ── 工具函数 ──
 function scoreColor(score) {
-  if (score >= 80) return '#67C23A'
-  if (score >= 60) return '#E6A23C'
-  return '#F56C6C'
+  if (score >= 80) return '#5B8C5A'
+  if (score >= 60) return '#D4956A'
+  return '#C5554A'
 }
 function resetEval() {
   evalStatus.value = 'idle'
@@ -797,7 +797,11 @@ async function deleteHistoryItem(item) {
     historyItems.value = historyItems.value.filter(h => h.session_id !== item.session_id)
     selectedForCompare.value = selectedForCompare.value.filter(h => h.session_id !== item.session_id)
     ElMessage.success('已删除')
-  } catch { /* user cancelled */ }
+  } catch (e) {
+    if (e !== 'cancel' && e?.message !== 'cancel') {
+      ElMessage.error('删除失败: ' + (e.response?.data?.detail || e.message || ''))
+    }
+  }
 }
 
 function formatDate(dateStr) {
@@ -839,57 +843,57 @@ function goToExport() {
 .eval-view { max-width: 1300px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .page-header .page-title { margin-bottom: 0; }
-.page-title { font-size: 20px; margin-bottom: 20px; color: #303133; }
+.page-title { font-size: 20px; margin-bottom: 20px; color: #2D3142; font-weight: 700; }
 
 .config-card { position: sticky; top: 24px; }
-.text-preview { background: #fafafa; padding: 10px; border-radius: 6px; font-size: 13px; color: #606266; max-height: 80px; overflow: hidden; }
+.text-preview { background: #FAF8F5; padding: 10px; border-radius: 6px; font-size: 13px; color: #6B6E7B; max-height: 80px; overflow: hidden; }
 
 .dim-row { display: flex; align-items: center; margin-bottom: 8px; }
-.dim-weight { font-size: 13px; color: #909399; width: 40px; text-align: right; }
-.weight-summary { font-size: 13px; color: #67C23A; margin-top: 8px; padding: 4px 8px; background: #f0f9eb; border-radius: 4px; display: inline-block; }
-.weight-summary.invalid { color: #E6A23C; background: #fdf6ec; }
+.dim-weight { font-size: 13px; color: #9B9EAA; width: 40px; text-align: right; }
+.weight-summary { font-size: 13px; color: #5B8C5A; margin-top: 8px; padding: 4px 8px; background: rgba(91,140,90,0.08); border-radius: 4px; display: inline-block; }
+.weight-summary.invalid { color: #D4956A; background: rgba(212,149,106,0.08); }
 
 .action-buttons { margin-top: 12px; }
 
 .empty-card { min-height: 400px; display: flex; align-items: center; justify-content: center; }
-.empty-state { text-align: center; color: #909399; padding: 60px 0; }
-.empty-state h3 { margin: 16px 0 8px; color: #606266; }
+.empty-state { text-align: center; color: #9B9EAA; padding: 60px 0; }
+.empty-state h3 { margin: 16px 0 8px; color: #6B6E7B; }
 
 .progress-card { min-height: 300px; }
 .progress-header { display: flex; justify-content: space-between; align-items: center; }
 
 .phase-list { margin-top: 20px; }
-.phase-row { display: flex; align-items: center; padding: 10px 12px; border-radius: 8px; margin-bottom: 4px; transition: background 0.2s; }
-.phase-row.is-active { background: #ecf5ff; }
+.phase-row { display: flex; align-items: center; padding: 10px 12px; border-radius: 10px; margin-bottom: 4px; transition: background 0.22s cubic-bezier(0.4,0,0.2,1); }
+.phase-row.is-active { background: rgba(200,150,62,0.06); }
 .phase-icon { width: 28px; font-size: 18px; }
 .phase-info { flex: 1; display: flex; align-items: center; gap: 8px; }
-.phase-label { font-size: 14px; color: #303133; }
+.phase-label { font-size: 14px; color: #2D3142; }
 .phase-score { font-size: 18px; font-weight: bold; }
-.phase-running { font-size: 12px; color: #409EFF; }
+.phase-running { font-size: 12px; color: #C8963E; }
 
 .overall-score { text-align: center; padding: 20px 0; }
 .score-number { font-size: 72px; font-weight: bold; line-height: 1; }
-.score-label { font-size: 16px; color: #909399; margin-top: 8px; }
+.score-label { font-size: 16px; color: #9B9EAA; margin-top: 8px; }
 
 .dim-score-row { display: flex; align-items: center; margin-bottom: 12px; }
-.dim-name { width: 90px; font-size: 13px; color: #606266; }
-.dim-value { width: 48px; text-align: right; font-size: 14px; font-weight: bold; color: #303133; }
+.dim-name { width: 90px; font-size: 13px; color: #6B6E7B; }
+.dim-value { width: 48px; text-align: right; font-size: 14px; font-weight: bold; color: #2D3142; }
 
 .comparison { display: flex; align-items: center; gap: 20px; padding: 12px 0; }
 .comp-item { text-align: center; }
-.comp-label { font-size: 13px; color: #909399; display: block; }
-.comp-value { font-size: 24px; font-weight: bold; color: #303133; }
+.comp-label { font-size: 13px; color: #9B9EAA; display: block; }
+.comp-value { font-size: 24px; font-weight: bold; color: #2D3142; }
 
 .history-empty { text-align: center; padding: 60px 0; }
-.history-item { border-bottom: 1px solid #ebeef5; padding: 12px 0; }
+.history-item { border-bottom: 1px solid #E8E5DF; padding: 12px 0; }
 .history-item-main { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .history-item-left { display: flex; align-items: center; flex: 1; gap: 8px; }
 .history-item-info { flex: 1; }
-.history-item-date { font-size: 13px; color: #303133; }
+.history-item-date { font-size: 13px; color: #2D3142; }
 .history-item-meta { display: flex; gap: 4px; margin-top: 4px; }
 .history-item-score { font-size: 20px; font-weight: bold; min-width: 60px; text-align: right; }
 .history-item-detail { padding: 12px 0 4px 32px; }
 .history-dim-row { display: flex; align-items: center; margin: 6px 0; font-size: 13px; }
-.compare-score { font-size: 36px; font-weight: bold; text-align: center; padding: 8px 0; }
+.compare-score { font-size: 36px; font-weight: bold; text-align: center; padding: 8px 0; color: #C8963E; }
 .compare-dim { display: flex; justify-content: space-between; font-size: 13px; margin: 4px 0; padding: 2px 8px; }
 </style>

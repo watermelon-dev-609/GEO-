@@ -2,6 +2,8 @@
 
 import os
 import logging
+import tempfile
+import threading
 from pathlib import Path
 
 # 修复 PyTorch scikit-learn OpenMP DLL 冲突导致 segfault 的问题
@@ -16,6 +18,8 @@ os.environ.setdefault("HF_HUB_ENDPOINT", _HF_MIRROR)
 # backend根目录
 APP_DIR = Path(__file__).resolve().parent  # backend/app
 BACKEND_DIR = APP_DIR.parent  # backend
+
+_config_lock = threading.Lock()
 
 
 def _setup_logging():
@@ -60,15 +64,17 @@ _setup_logging()
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import cleaning, geo_rewrite, jsonld, evaluation, reports
-from app.models.schemas import SystemConfigResponse, LLMConfigStatus
+from app.api import analytics, diagnosis, platform_monitor, keywords, competitors, templates
+from app.models.schemas import SystemConfigResponse, LLMConfigStatus, LLMConfigUpdateRequest
 from app.models.enums import AIPlatform
 from app.utils.config import load_settings, load_api_keys, get_data_dir
 
 # ── 应用初始化 ──
 
+from app.utils.config import get_enterprise_name as _ent_name
 app = FastAPI(
     title="GEO生成式搜索优化系统",
-    description="武汉微艺达智能科技有限公司 - 轻量化GEO优化平台",
+    description=f"{_ent_name()} - 轻量化GEO优化平台",
     version="1.0.0-personal",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -89,11 +95,22 @@ app.include_router(geo_rewrite.router, prefix="/api/geo", tags=["GEO文案重构
 app.include_router(jsonld.router, prefix="/api/jsonld", tags=["JSON-LD生成"])
 app.include_router(evaluation.router, prefix="/api/evaluate", tags=["AI评测"])
 app.include_router(reports.router, prefix="/api/reports", tags=["数据报表"])
+app.include_router(analytics.router, prefix="/api/analytics", tags=["数据看板"])
+app.include_router(diagnosis.router, prefix="/api/diagnosis", tags=["内容诊断"])
+app.include_router(platform_monitor.router, prefix="/api/platform-monitor", tags=["平台监测"])
+app.include_router(keywords.router, prefix="/api/keywords", tags=["关键词库"])
+app.include_router(competitors.router, prefix="/api/competitors", tags=["竞品调研"])
+app.include_router(templates.router, prefix="/api/templates", tags=["内容模板"])
+app.include_router(analytics.router, prefix="/api/samples", tags=["示例数据"])
 
 # 确保数据目录存在
 get_data_dir()
 (BACKEND_DIR / "data" / "output").mkdir(parents=True, exist_ok=True)
 (BACKEND_DIR / "data" / "evaluations").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "platform_rules").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "competitors").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "keywords").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "templates").mkdir(parents=True, exist_ok=True)
 
 
 # ── 启动事件 ──
@@ -127,6 +144,22 @@ async def startup_load_history():
         hist_logger.info(f"已加载 {len(sessions)} 条评测历史记录")
     except Exception as e:
         hist_logger.warning(f"评测历史加载失败: {e}")
+
+
+@app.on_event("startup")
+async def startup_init_platform_rules():
+    """启动时初始化平台规则数据"""
+    import logging
+    plat_logger = logging.getLogger(__name__)
+    try:
+        from app.api.platform_monitor import init_platform_rules
+        count = await init_platform_rules()
+        if count > 0:
+            plat_logger.info(f"已初始化 {count} 个平台的规则数据文件")
+        else:
+            plat_logger.info("平台规则数据文件已就绪")
+    except Exception as e:
+        plat_logger.warning(f"平台规则初始化失败: {e}")
 
 
 # ── 系统接口 ──
@@ -179,15 +212,15 @@ KEY_PATTERNS = {
 }
 
 @app.post("/api/config/llm/update")
-async def update_llm_config(req: dict):
+async def update_llm_config(req: LLMConfigUpdateRequest):
     """更新LLM平台的API Key（格式校验 + 立即生效）"""
     import re
     import yaml
     from pathlib import Path
 
-    platform = req.get("platform", "")
-    api_key = req.get("api_key", "").strip()
-    secret_key = req.get("secret_key", "").strip()
+    platform = req.platform
+    api_key = req.api_key.strip()
+    secret_key = req.secret_key.strip()
 
     if not platform:
         raise HTTPException(status_code=400, detail="请指定平台")
@@ -212,19 +245,26 @@ async def update_llm_config(req: dict):
     if not config_path.exists():
         raise HTTPException(status_code=500, detail="配置文件 api_keys.yaml 不存在")
 
-    with open(config_path, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f) or {}
+    with _config_lock:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
 
-    if "platforms" not in config:
-        config["platforms"] = {}
-    if platform not in config["platforms"]:
-        config["platforms"][platform] = {}
-    config["platforms"][platform]["api_key"] = api_key
-    if secret_key:
-        config["platforms"][platform]["secret_key"] = secret_key
+        if "platforms" not in config:
+            config["platforms"] = {}
+        if platform not in config["platforms"]:
+            config["platforms"][platform] = {}
+        config["platforms"][platform]["api_key"] = api_key
+        if secret_key:
+            config["platforms"][platform]["secret_key"] = secret_key
 
-    with open(config_path, "w", encoding="utf-8") as f:
-        yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".yaml",
+                                          delete=False, dir=config_path.parent) as tmp:
+            yaml.dump(config, tmp, allow_unicode=True, default_flow_style=False)
+            tmp_path = tmp.name
+        os.replace(tmp_path, str(config_path))
+
+    from app.utils.config import invalidate_config_cache
+    invalidate_config_cache()
 
     return {"status": "ok", "platform": platform, "configured": True, "message": f"{platform} 配置已保存并立即生效"}
 

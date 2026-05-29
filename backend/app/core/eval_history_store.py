@@ -3,9 +3,14 @@
 from __future__ import annotations
 import json
 import logging
+import os
+import tempfile
+import threading
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_file_lock = threading.Lock()
 
 # 数据目录：backend/data/evaluations/
 def _get_history_dir() -> Path:
@@ -28,8 +33,12 @@ def save_session(session, evaluated_text: str = "", original_text: str = "") -> 
     data["mode"] = getattr(session, 'mode', 'pipeline')
 
     filepath = _get_history_dir() / f"{session.session_id}.json"
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+    with _file_lock:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".json",
+                                          delete=False, dir=_get_history_dir()) as tmp:
+            json.dump(data, tmp, ensure_ascii=False, indent=2, default=str)
+            tmp_path = Path(tmp.name)
+        os.replace(str(tmp_path), str(filepath))
     logger.info(f"评测历史已保存: {filepath}")
     return filepath
 
@@ -63,8 +72,9 @@ def load_session(session_id: str) -> dict | None:
 def delete_session(session_id: str) -> bool:
     """删除评测历史文件"""
     filepath = _get_history_dir() / f"{session_id}.json"
-    if not filepath.exists():
-        return False
-    filepath.unlink()
+    with _file_lock:
+        if not filepath.exists():
+            return False
+        filepath.unlink()
     logger.info(f"评测历史已删除: {session_id}")
     return True

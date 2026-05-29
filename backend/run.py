@@ -18,12 +18,12 @@ def check_dependencies():
         import fastapi
         import uvicorn
         import yaml
-        print("  ✓ 核心依赖已安装")
+        print("  [OK] 核心依赖已安装")
     except ImportError:
-        print("  ✗ 依赖未安装，正在安装...")
+        print("  [X] 依赖未安装，正在安装...")
         req_path = BACKEND_DIR / "requirements.txt"
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", str(req_path)])
-        print("  ✓ 依赖安装完成")
+        print("  [OK] 依赖安装完成")
 
 
 def check_config():
@@ -32,12 +32,12 @@ def check_config():
     keys_path = BACKEND_DIR / "config" / "api_keys.yaml"
     example_path = BACKEND_DIR / "config" / "api_keys.yaml.example"
     if not keys_path.exists():
-        print(f"  ! api_keys.yaml 不存在，从示例文件复制...")
+        print(f"  [!] api_keys.yaml 不存在，从示例文件复制...")
         import shutil
         shutil.copy(example_path, keys_path)
-        print(f"  ✓ 已创建 api_keys.yaml，请编辑填入API Key: {keys_path}")
+        print(f"  [OK] 已创建 api_keys.yaml，请编辑填入API Key: {keys_path}")
     else:
-        print("  ✓ api_keys.yaml 已就绪")
+        print("  [OK] api_keys.yaml 已就绪")
 
 
 def start_server():

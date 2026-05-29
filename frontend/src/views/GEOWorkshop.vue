@@ -125,8 +125,8 @@
             <div class="batch-detail">
               <span v-for="p in selectedPlatforms" :key="p" class="batch-platform" :class="{ done: batchDoneSet.has(p), active: batchCurrent === p }">
                 {{ p }}
-                <el-icon v-if="batchDoneSet.has(p)" color="#67C23A" :size="14"><CircleCheckFilled /></el-icon>
-                <el-icon v-else-if="batchCurrent === p" color="#409EFF" :size="14" class="is-loading"><Loading /></el-icon>
+                <el-icon v-if="batchDoneSet.has(p)" color="#5B8C5A" :size="14"><CircleCheckFilled /></el-icon>
+                <el-icon v-else-if="batchCurrent === p" color="#C8963E" :size="14" class="is-loading"><Loading /></el-icon>
                 <el-icon v-else color="#c0c4cc" :size="14"><Clock /></el-icon>
               </span>
             </div>
@@ -141,7 +141,7 @@
             <el-table-column prop="word_count" label="字数" width="80" align="right" />
             <el-table-column label="优化策略" min-width="200">
               <template #default="scope">
-                <span style="font-size:12px;color:#606266;">{{ scope.row.strategy_notes?.substring(0, 60) }}{{ scope.row.strategy_notes?.length > 60 ? '...' : '' }}</span>
+                <span style="font-size:12px;color:#6B6E7B;">{{ scope.row.strategy_notes?.substring(0, 60) }}{{ scope.row.strategy_notes?.length > 60 ? '...' : '' }}</span>
               </template>
             </el-table-column>
           </el-table>
@@ -190,6 +190,7 @@ import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
 import { rewriteText, getSandtableProfile } from '../api'
 import { ElMessage } from 'element-plus'
+import { SANDTABLE_TYPES, AI_PLATFORMS } from '../constants'
 
 const router = useRouter()
 const store = useGeoStore()
@@ -225,26 +226,8 @@ const rewriteProgressText = computed(() => {
   return '正在生成...'
 })
 
-const sandtableTypes = [
-  { value: 'smart_traffic', label: '智慧交通沙盘' },
-  { value: 'smart_city', label: '智慧城市沙盘' },
-  { value: 'smart_industry', label: '智慧工业沙盘' },
-  { value: 'smart_agriculture', label: '智慧农业沙盘' },
-  { value: 'smart_logistics', label: '智慧物流沙盘' },
-  { value: 'military_terrain', label: '军事地形沙盘' },
-  { value: 'digital_multimedia', label: '数字多媒体沙盘' },
-  { value: 'real_estate', label: '地产/规划/展厅沙盘' },
-]
-
-const availablePlatforms = [
-  { value: 'wenxin', label: '文心一言' },
-  { value: 'tongyi', label: '通义千问' },
-  { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'doubao', label: '字节豆包' },
-  { value: 'yuanbao', label: '腾讯元宝' },
-  { value: 'kimi', label: 'Kimi' },
-  { value: 'xinghuo', label: '讯飞星火' },
-]
+const sandtableTypes = SANDTABLE_TYPES
+const availablePlatforms = AI_PLATFORMS
 
 onMounted(() => {
   // 只在文本为空或来自重优化时自动填充，避免覆盖用户手动编辑
@@ -447,8 +430,22 @@ function copyText(text) {
   navigator.clipboard.writeText(text).then(() => ElMessage.success('已复制'))
 }
 
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function renderMarkdown(text) {
-  return text.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+  if (!text) return ''
+  return escapeHtml(text)
+    .replace(/\n/g, '<br>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
 }
 
 function goToEvaluate() {
@@ -457,26 +454,26 @@ function goToEvaluate() {
 </script>
 
 <style scoped>
-.workshop-view { max-width: 1200px; }
-.page-title { font-size: 20px; margin-bottom: 20px; color: #303133; }
+.workshop-view { max-width: 1240px; }
+.page-title { font-size: 20px; margin-bottom: 20px; color: #2D3142; font-weight: 700; }
 .empty-card { min-height: 400px; display: flex; align-items: center; justify-content: center; }
-.empty-state { text-align: center; color: #909399; padding: 60px 0; }
-.empty-state h3 { margin: 16px 0 8px; color: #606266; }
+.empty-state { text-align: center; color: #9B9EAA; padding: 60px 0; }
+.empty-state h3 { margin: 16px 0 8px; color: #6B6E7B; }
 .streaming-area { margin-bottom: 16px; }
 .batch-progress { margin: 12px 0; }
 .batch-detail { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.batch-platform { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px; font-size: 13px; background: #f5f7fa; border: 1px solid #ebeef5; }
-.batch-platform.done { background: #f0f9eb; border-color: #c2e7b0; color: #67C23A; }
-.batch-platform.active { background: #ecf5ff; border-color: #b3d8ff; color: #409EFF; }
-.stream-output { background: #1d1e2c; color: #e5e5e5; padding: 16px; border-radius: 8px; margin-top: 12px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; font-size: 13px; line-height: 1.8; }
+.batch-platform { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px; font-size: 13px; background: #FAF8F5; border: 1px solid #E8E5DF; }
+.batch-platform.done { background: rgba(91,140,90,0.08); border-color: rgba(91,140,90,0.18); color: #5B8C5A; }
+.batch-platform.active { background: rgba(200,150,62,0.08); border-color: rgba(200,150,62,0.18); color: #C8963E; }
+.stream-output { background: #151721; color: #e5e5e5; padding: 16px; border-radius: 10px; margin-top: 12px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; line-height: 1.8; }
 .result-text { white-space: pre-wrap; line-height: 1.8; font-size: 14px; max-height: 500px; overflow-y: auto; }
 .result-meta { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
 .strategy-notes { white-space: normal; line-height: 1.8; font-size: 13px; }
-.suggestion-row { display: flex; align-items: center; justify-content: space-between; margin: 4px 0; padding: 4px 8px; border-radius: 4px; transition: background 0.2s; }
-.suggestion-row.adopted { background: #e1f3d8; }
+.suggestion-row { display: flex; align-items: center; justify-content: space-between; margin: 4px 0; padding: 4px 8px; border-radius: 4px; transition: background 0.22s cubic-bezier(0.4,0,0.2,1); }
+.suggestion-row.adopted { background: rgba(91,140,90,0.08); }
 .suggestion-text { flex: 1; font-size: 13px; margin-right: 8px; }
-.adopted-summary { margin-top: 8px; padding: 6px 10px; background: #e1f3d8; border-radius: 4px; font-size: 13px; color: #67C23A; font-weight: bold; }
-.config-hint { font-size: 13px; color: #909399; }
+.adopted-summary { margin-top: 8px; padding: 6px 10px; background: rgba(91,140,90,0.08); border-radius: 4px; font-size: 13px; color: #5B8C5A; font-weight: bold; }
+.config-hint { font-size: 13px; color: #9B9EAA; }
 .config-hint ul { padding-left: 18px; margin-top: 4px; }
 .config-hint li { margin: 2px 0; }
 .platform-compare { margin-bottom: 16px; }
