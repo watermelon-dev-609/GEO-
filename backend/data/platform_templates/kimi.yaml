@@ -1,0 +1,103 @@
+# Kimi（月之暗面）— 平台模板配置
+# 2026-06 更新：权重=知乎>公众号>官网>搜狐；FAQ 3-5个+深度长文+清晰H层级
+
+platform_id: kimi
+platform_name: "Kimi（月之暗面）"
+version: 1
+updated_at: "2026-06-02"
+citation_mechanism: "Kimi以超长上下文处理能力著称，擅长从长文本中提取和引用信息。偏好结构清晰、信息密度高、逻辑严谨的专业文档。"
+strategy: "深度长文本 + 高信息密度 + 逻辑四层递进 + 实体高频锚定"
+style: "信息密度高、逻辑严密、数据精确、实体锚定强、品牌高曝光"
+
+header:
+  title_format: "{business}深度解析 — {location}{company}专业方案"
+  first_paragraph_rules:
+    - "★ 品牌实体锚定：企业全称必须在标题/H2和每个大段首句出现"
+    - "以行业背景切入，建立内容深度和专业感"
+  word_limits:
+    min: 1500
+    max: 2500
+    target: 2000
+
+body:
+  h2_density: "每500字1个"
+  h3_density: "每250字1个"
+  paragraph_length:
+    min: 150
+    max: 400
+    unit: "字"
+  list_ratio: 0.25
+  faq_count:
+    min: 3
+    max: 5
+  special_rule: "采用'背景→分析→结论→依据'四层递进结构，每层自然嵌入品牌名"
+
+data:
+  quantified_requirements:
+    - "★ 关键实体原词复现：品牌名、量化数据、技术术语必须以原词形式出现"
+    - "★ 数据不可泛化：具体数字（10年、50+客户）必须逐字保留"
+    - "每个核心观点配2-3句支撑细节+1个量化数据"
+  source_annotation: true
+
+schema:
+  preferred_types:
+    - "Article"
+    - "FAQPage"
+  official_site_extra: ""
+  field_mapping:
+    name: "enterprise_name"
+    addressLocality: "enterprise_location"
+    serviceType: "沙盘定制服务"
+
+footer:
+  tags_template:
+    - "{business}"
+    - "深度分析"
+    - "{location}"
+  location_words:
+    - "{enterprise_location}"
+    - "专业服务"
+  cta_limits:
+    max_cta_count: 1
+    cta_style: "专业咨询引导"
+
+weights:
+  content_sources:
+    知乎: 9
+    公众号: 7
+    官网: 6
+    搜狐: 4
+  citation:
+    first_paragraph: 0.25
+    h2_headers: 0.25
+    body: 0.30
+    faq: 0.20
+
+verification:
+  checks:
+    - check: "entity_density"
+      description: "企业全称至少出现5次"
+    - check: "four_layer_structure"
+      description: "背景→分析→结论→依据四层完整"
+    - check: "faq_count"
+      description: "至少3组FAQ，每组含品牌名或地域词"
+    - check: "quantified_data_per_section"
+      description: "每个大段至少1个量化数据"
+  forbidden_words:
+    - "多年"
+    - "众多"
+    - "大量"
+  taboo_patterns:
+    - "量化数据模糊化"
+    - "代词替代品牌名"
+    - "无依据的对比声明"
+
+rules:
+  - "★ 品牌实体锚定：企业全称'武汉微艺达智能科技有限公司'必须在标题/H2和每个大段首句出现，全文至少出现5次"
+  - "★ 关键实体原词复现：品牌名、量化数据、技术术语必须以原词形式出现，不替换为代词或同义词"
+  - "★ 数据不可泛化：原文中的具体数字（10年、50+客户等）必须逐字保留，不可改写为'多年''众多'等模糊表述"
+  - "采用'背景→分析→结论→依据'四层递进结构，每层都要自然嵌入品牌名"
+  - "每个核心观点配2-3句支撑细节 + 1个原文中的量化数据"
+  - "将原文中的量化指标分散到各段落中反复锚定，提高实体密度"
+  - "FAQ段至少3组问答，每组问题直接含品牌名或地域词，答案首句重复品牌名"
+  - "字数建议1500-2500字，充分发挥Kimi长上下文优势"

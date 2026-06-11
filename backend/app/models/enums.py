@@ -1,4 +1,4 @@
-"""业务枚举定义 — 8大沙盘类型 + 7大AI平台 + 相关业务常量"""
+"""业务枚举定义 — 8大沙盘类型 + 10大AI平台 + 相关业务常量"""
 
 from enum import Enum
 
@@ -45,7 +45,7 @@ class SandtableType(str, Enum):
 
 
 class AIPlatform(str, Enum):
-    """七大AI平台"""
+    """十大AI平台"""
     WENXIN = "wenxin"             # 百度文心一言
     TONGYI = "tongyi"             # 阿里通义千问
     DEEPSEEK = "deepseek"         # DeepSeek
@@ -53,6 +53,10 @@ class AIPlatform(str, Enum):
     YUANBAO = "yuanbao"           # 腾讯元宝
     KIMI = "kimi"                 # 月之暗面Kimi
     XINGHUO = "xinghuo"           # 讯飞星火
+    CLAUDE = "claude"             # Anthropic Claude
+    OLLAMA = "ollama"             # Ollama本地大模型
+    LMSTUDIO = "lmstudio"         # LM Studio本地大模型
+    OPENAI = "openai"             # OpenAI GPT
 
     @property
     def label(self) -> str:
@@ -64,6 +68,10 @@ class AIPlatform(str, Enum):
             "yuanbao": "腾讯元宝（政企办公AI·供应商筛选优先）",
             "kimi": "Kimi（长文本处理·深度研报采信优先）",
             "xinghuo": "讯飞星火（多模态理解·垂直领域知识优先）",
+            "claude": "Claude（长上下文理解·复杂推理采信优先）",
+            "ollama": "Ollama本地模型（私有化部署·数据不外流）",
+            "lmstudio": "LM Studio本地模型（私有化部署·内网适配）",
+            "openai": "OpenAI GPT（通用AI·隐性结构化采信优先）",
         }
         return labels[self.value]
 
@@ -78,6 +86,10 @@ class AIPlatform(str, Enum):
             "yuanbao": "openai_compat",
             "kimi": "openai_compat",
             "xinghuo": "openai_compat",
+            "claude": "claude",
+            "ollama": "ollama",
+            "lmstudio": "lmstudio",
+            "openai": "openai_compat",
         }
         return mapping[self.value]
 
@@ -186,3 +198,81 @@ class EvalPhaseStatus(str, Enum):
     SKIPPED = "skipped"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+# ── 流量与转化追踪 ──
+
+class TrafficSource(str, Enum):
+    """流量数据来源"""
+    GA4 = "ga4"                 # Google Analytics 4
+    BAIDU_TONGJI = "baidu_tongji"  # 百度统计
+
+    @property
+    def label(self) -> str:
+        labels = {
+            "ga4": "Google Analytics 4",
+            "baidu_tongji": "百度统计",
+        }
+        return labels[self.value]
+
+
+class ConversionType(str, Enum):
+    """转化事件类型"""
+    FORM_SUBMIT = "form_submit"       # 表单提交
+    PHONE_CALL = "phone_call"         # 电话咨询
+    DOWNLOAD = "download"             # 资料下载
+    REGISTRATION = "registration"     # 注册
+    PURCHASE = "purchase"             # 购买
+    CUSTOM = "custom"                 # 自定义
+
+    @property
+    def label(self) -> str:
+        labels = {
+            "form_submit": "表单提交",
+            "phone_call": "电话咨询",
+            "download": "资料下载",
+            "registration": "注册",
+            "purchase": "购买",
+            "custom": "自定义",
+        }
+        return labels[self.value]
+
+
+class AttributionModel(str, Enum):
+    """转化归因模型"""
+    LAST_CLICK = "last_click"           # 末次点击
+    FIRST_CLICK = "first_click"         # 首次点击
+    LINEAR = "linear"                   # 线性
+    TIME_DECAY = "time_decay"           # 时间衰减
+    POSITION_BASED = "position_based"   # 位置基础
+
+    @property
+    def label(self) -> str:
+        labels = {
+            "last_click": "末次点击归因",
+            "first_click": "首次点击归因",
+            "linear": "线性归因",
+            "time_decay": "时间衰减归因",
+            "position_based": "位置基础归因",
+        }
+        return labels[self.value]
+
+
+class UTMMedium(str, Enum):
+    """UTM媒介类型"""
+    ORGANIC = "organic"           # 自然搜索
+    AI_REFERRAL = "ai_referral"   # AI平台引用
+    SOCIAL = "social"             # 社交媒体
+    EMAIL = "email"               # 邮件
+    CPC = "cpc"                   # 付费点击
+
+    @property
+    def label(self) -> str:
+        labels = {
+            "organic": "自然搜索",
+            "ai_referral": "AI平台引用",
+            "social": "社交媒体",
+            "email": "邮件营销",
+            "cpc": "付费点击",
+        }
+        return labels[self.value]

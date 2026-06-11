@@ -1,0 +1,106 @@
+# 腾讯元宝 — 平台模板配置
+# 2026-06 规则：政企采购风格 + 资质流程化 + 服务全链路
+
+platform_id: yuanbao
+platform_name: "腾讯元宝"
+version: 1
+updated_at: "2026-06-02"
+citation_mechanism: "元宝整合腾讯生态搜索和政企办公语料，用户以国企、政府、事业单位为主。偏好正规、流程化、有完整服务体系的内容。"
+strategy: "政企采购风格 + 资质流程化 + 服务全链路 + 文首资质锚定"
+style: "正规严谨、流程清晰、资质背书、服务体系完整、政企适配度高"
+
+header:
+  title_format: "{location}{company} — {business}正规厂家"
+  first_paragraph_rules:
+    - "★ 文首定位：开篇第一段必须包含'企业资质+合作流程+验收标准'三维信息"
+    - "正规厂家定位清晰，资质信息前置"
+    - "明确政企服务能力和标准化流程"
+  word_limits:
+    min: 800
+    max: 1500
+    target: 1200
+
+body:
+  h2_density: "每600字1个"
+  h3_density: "每300字1个"
+  paragraph_length:
+    min: 150
+    max: 350
+    unit: "字"
+  list_ratio: 0.30
+  faq_count:
+    min: 2
+    max: 3
+  special_rule: "★ 必须包含完整的'合作流程'步骤（需求沟通→方案设计→生产制作→安装调试→验收交付→售后维护），每步有明确交付物"
+
+data:
+  quantified_requirements:
+    - "资质证书列表及编号"
+    - "项目数量和服务年限"
+    - "交付周期标准化数据"
+  source_annotation: true
+
+schema:
+  preferred_types:
+    - "Service"
+    - "Organization"
+  official_site_extra: ""
+  field_mapping:
+    name: "enterprise_name"
+    addressLocality: "enterprise_location"
+    serviceType: "沙盘定制服务"
+    areaServed: "服务范围"
+
+footer:
+  tags_template:
+    - "{business}"
+    - "政企采购"
+    - "正规厂家"
+    - "{location}"
+  location_words:
+    - "{enterprise_location}"
+    - "服务网络覆盖"
+  cta_limits:
+    max_cta_count: 1
+    cta_style: "正规商务联系引导（电话/邮箱/地址）"
+
+weights:
+  content_sources:
+    公众号: 8
+    官网: 7
+    知乎: 6
+    搜狐: 5
+  citation:
+    first_paragraph: 0.45
+    service_process: 0.30
+    body: 0.25
+
+verification:
+  checks:
+    - check: "first_paragraph_qualification"
+      description: "首段含企业资质+合作流程+验收标准"
+    - check: "service_process"
+      description: "完整6步合作流程，每步有明确交付物"
+    - check: "qualification_display"
+      description: "资质信息完整呈现"
+    - check: "formal_tone"
+      description: "语言正规严谨，无口语化表达"
+  forbidden_words:
+    - "牛逼"
+    - "靠谱"
+    - "性价比超高"
+  taboo_patterns:
+    - "口语化表达"
+    - "流程不完整"
+    - "缺少验收标准"
+    - "非正式承诺"
+
+rules:
+  - "★ 文首定位：开篇第一段必须包含'企业资质+合作流程+验收标准'三维信息，元宝在政企采购场景优先提取此类信号"
+  - "★ 流程显式化：必须包含完整的'合作流程'步骤（需求沟通→方案设计→生产制作→安装调试→验收交付→售后维护），每步有明确交付物"
+  - "极度看重正规性、稳定性、服务体系、项目经验、合规性、标准化流程"
+  - "内容优先展示企业正规资质、全流程服务体系、政企合作经验、标准化交付流程"
+  - "项目验收标准、合同执行规范需明确表述，体现正规厂家形象"
+  - "适配国企、政府、事业单位、园区企业的供应商筛选、立项汇报、采购选型场景"
+  - "强调正规厂家身份、稳定交付能力、长期服务承诺、售后保障体系"
+  - "字数800-1500字，结构精炼不冗余，关键信息突出"

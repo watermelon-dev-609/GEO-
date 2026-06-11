@@ -2,7 +2,7 @@
   <div class="dashboard">
     <div class="welcome">
       <h1>GEO生成式搜索优化系统</h1>
-      <p>武汉微艺达智能科技有限公司 · 全平台AI品牌优先曝光 · 纯白帽合规优化</p>
+      <p>{{ store.enterpriseName || 'GEO生成式搜索优化平台' }} · 全平台AI品牌优先曝光 · 纯白帽合规优化</p>
     </div>
 
     <el-row :gutter="20" class="quick-actions">
@@ -243,6 +243,7 @@ const quickActions = [
   { path: '/workshop', title: 'GEO优化工坊', desc: '八大沙盘×七大平台专项优化', icon: 'EditPen', color: '#5B8C5A' },
   { path: '/evaluation', title: 'AI评测中心', desc: '模拟评测·品牌采信分析', icon: 'DataAnalysis', color: '#5B8AAC' },
   { path: '/export', title: '成果导出', desc: '文案·代码·报表一键导出', icon: 'Download', color: '#8065E6' },
+  { path: '/full-funnel', title: '全域转化漏斗', desc: '追踪AI引用→流量→转化全链路ROI', icon: 'TrendCharts', color: '#D4956A' },
 ]
 
 const llmConfigs = computed(() => store.llmConfigs)
@@ -294,7 +295,7 @@ async function refreshConfig() {
     const res = await getLLMConfig()
     store.setLLMConfigs(res.data.llm_platforms || [])
     ElMessage.success('配置已刷新')
-  } catch (e) { ElMessage.error('配置刷新失败') }
+  } catch (e) { ElMessage.error('配置刷新失败: ' + (e.response?.data?.detail || e.message)) }
 }
 
 async function loadEvalHistory() {
@@ -302,7 +303,7 @@ async function loadEvalHistory() {
   try {
     const res = await getEvalHistory()
     evalHistory.value = res.data.items || []
-  } catch (e) { ElMessage.error('评测历史加载失败') }
+  } catch (e) { ElMessage.error('评测历史加载失败: ' + (e.response?.data?.detail || e.message)) }
   finally { evalHistoryLoading.value = false }
 }
 
@@ -331,7 +332,9 @@ async function loadAnalytics() {
     analytics.value = res.data
   } catch (e) {
     analyticsError.value = true
-    console.error('loadAnalytics failed:', e)
+    if (e.response?.status !== 404) {
+      ElMessage.warning('数据看板加载失败: ' + (e.response?.data?.detail || e.message))
+    }
   } finally {
     analyticsLoading.value = false
   }
@@ -341,7 +344,7 @@ onMounted(async () => {
   try {
     const res = await getLLMConfig()
     store.setLLMConfigs(res.data.llm_platforms || [])
-  } catch (e) { console.error('checkConfig failed:', e) }
+  } catch (e) { ElMessage.warning('LLM配置加载失败，请检查后端服务: ' + (e.response?.data?.detail || e.message)) }
   loadEvalHistory()
   loadAnalytics()
 })

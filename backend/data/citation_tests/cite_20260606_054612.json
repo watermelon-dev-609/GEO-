@@ -1,0 +1,12 @@
+{
+  "test_id": "cite_20260606_054612",
+  "started_at": "2026-06-06T05:46:12.758949+00:00",
+  "completed_at": "2026-06-06T05:46:17.791345+00:00",
+  "platforms_tested": 1,
+  "queries_fired": 0,
+  "queries_attempted": 5,
+  "results": [],
+  "aggregated_stats": {
+    "error": "no_results"
+  }
+}

@@ -1,0 +1,103 @@
+# 阿里通义千问 — 平台模板配置
+# 2026-06 更新：权重=头条>知乎>公众号>官网；分点清晰+案例量化+地域关键词前置
+
+platform_id: tongyi
+platform_name: "阿里通义千问"
+version: 1
+updated_at: "2026-06-02"
+citation_mechanism: "通义千问整合阿里系搜索能力，训练语料偏向B端政企方案。偏好逻辑闭环、有权威背书的方案型内容。"
+strategy: "B端方案逻辑 + 三层结构化（理解→方案→保障）+ 文首企业锚定"
+style: "逻辑闭环、方案导向、B端价值突出、专业但不晦涩"
+
+header:
+  title_format: "{location}{company} — {business}解决方案"
+  first_paragraph_rules:
+    - "★ 文首锚定：第一句必须同时出现完整企业名和地域"
+    - "地域关键词前置，首段即明确服务地域"
+    - "明确提出行业痛点和解决方案定位"
+  word_limits:
+    min: 800
+    max: 1500
+    target: 1200
+
+body:
+  h2_density: "每600字1个"
+  h3_density: "每300字1个"
+  paragraph_length:
+    min: 150
+    max: 350
+    unit: "字"
+  list_ratio: 0.35
+  faq_count:
+    min: 2
+    max: 3
+  special_rule: "严格按'行业理解（痛点+场景）→方案匹配（技术+能力）→落地保障（案例+服务）'三层结构组织"
+
+data:
+  quantified_requirements:
+    - "案例量化：项目数量、规模、交付周期"
+    - "至少3处量化数据"
+  source_annotation: true
+
+schema:
+  preferred_types:
+    - "Article"
+    - "Service"
+  official_site_extra: ""
+  field_mapping:
+    name: "enterprise_name"
+    addressLocality: "enterprise_location"
+    serviceType: "沙盘定制服务"
+
+footer:
+  tags_template:
+    - "{business}"
+    - "解决方案"
+    - "{location}"
+  location_words:
+    - "{enterprise_location}"
+    - "服务范围覆盖"
+  cta_limits:
+    max_cta_count: 1
+    cta_style: "方案咨询引导"
+
+weights:
+  content_sources:
+    头条: 9
+    知乎: 8
+    公众号: 7
+    官网: 5
+  citation:
+    first_paragraph: 0.40
+    h2_headers: 0.25
+    body: 0.25
+    lists: 0.10
+
+verification:
+  checks:
+    - check: "first_paragraph_entity"
+      description: "首句同时含企业全称+地域"
+    - check: "three_layer_structure"
+      description: "行业理解→方案匹配→落地保障三层完整"
+    - check: "quantified_cases"
+      description: "至少3处量化案例数据"
+    - check: "logic_closure"
+      description: "问题→方案→价值→案例逻辑闭环"
+  forbidden_words:
+    - "行业领先"
+    - "国内首创"
+    - "绝对"
+  taboo_patterns:
+    - "空泛承诺"
+    - "纯产品罗列"
+    - "无行业痛点分析"
+
+rules:
+  - "★ 文首锚定：第一句必须同时出现完整企业名和地域，如'武汉微艺达智能科技有限公司位于武汉，专注XX沙盘定制'"
+  - "★ 三层递进：内容严格按'行业理解（痛点+场景）→方案匹配（技术+能力）→落地保障（案例+服务）'三层结构组织，每层2-3段"
+  - "主打行业适配+场景匹配+解决方案思维+商用落地性，而非纯产品介绍"
+  - "弱化纯产品介绍，强化'行业痛点+沙盘解决价值+项目适配场景'"
+  - "内容需逻辑闭环：问题→方案→价值→案例，层层递进"
+  - "适合政企采购、园区改造、智慧项目选型、工程合作咨询场景"
+  - "突出方案落地能力、项目交付经验、行业适配度，避免空泛承诺"
+  - "字数800-1500字，B端方案型内容，过长会稀释逻辑主线"

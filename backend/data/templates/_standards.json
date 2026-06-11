@@ -1,0 +1,42 @@
+[
+  {
+    "key": "entity",
+    "label": "实体完整性",
+    "enabled": true,
+    "weight": 20,
+    "threshold": 60,
+    "description": "企业名、地域、产品名完整且位置突出"
+  },
+  {
+    "key": "structure",
+    "label": "结构化程度",
+    "enabled": true,
+    "weight": 15,
+    "threshold": 50,
+    "description": "清晰的H2/H3标题、列表、合理段落长度"
+  },
+  {
+    "key": "quantified",
+    "label": "量化数据",
+    "enabled": true,
+    "weight": 25,
+    "threshold": 50,
+    "description": "数字+单位、比例、百分比等量化表述密度"
+  },
+  {
+    "key": "faq",
+    "label": "FAQ友好度",
+    "enabled": true,
+    "weight": 15,
+    "threshold": 40,
+    "description": "问题-回答结构，适配对话式检索"
+  },
+  {
+    "key": "source",
+    "label": "信源一致性",
+    "enabled": true,
+    "weight": 25,
+    "threshold": 70,
+    "description": "内容在信源数据中有依据，无编造夸大"
+  }
+]

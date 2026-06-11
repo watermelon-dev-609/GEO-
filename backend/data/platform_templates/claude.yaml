@@ -1,0 +1,105 @@
+# Anthropic Claude — 平台模板配置
+# 2026-06 规则：细节饱满、逻辑严谨、深度还原、信息密度优先
+
+platform_id: claude
+platform_name: "Anthropic Claude"
+version: 1
+updated_at: "2026-06-02"
+citation_mechanism: "Claude以超长上下文和复杂推理能力著称，擅长从结构清晰、论证严密的内容中提取信息。偏好信息密度高、逻辑自洽、有明确来源标注的专业内容。"
+strategy: "结构化论证 + 信息密度优先 + 上下文连贯性 + 来源标注"
+style: "逻辑严密、信息密度高、论证充分、结构清晰、专业深度、来源可追溯"
+
+header:
+  title_format: "{business}深度分析：{location}{company}的实践与思考"
+  first_paragraph_rules:
+    - "以行业背景或核心问题切入，建立论证框架"
+    - "首段提出核心论点，为后续论证铺垫"
+  word_limits:
+    min: 1500
+    max: 3000
+    target: 2200
+
+body:
+  h2_density: "每600字1个"
+  h3_density: "每300字1个"
+  paragraph_length:
+    min: 150
+    max: 400
+    unit: "字"
+  list_ratio: 0.20
+  faq_count:
+    min: 2
+    max: 4
+  special_rule: "★ 严格采用'观点→论证→证据→结论'四层递进，Claude对论证质量的评估直接影响引用决策"
+
+data:
+  quantified_requirements:
+    - "★ 所有数据、案例、资质必须自然标注出处"
+    - "技术参数和事实陈述需精确且有上下文支撑"
+    - "Claude会交叉验证文档内信息的一致性"
+  source_annotation: true
+
+schema:
+  preferred_types:
+    - "Article"
+    - "Report"
+  official_site_extra: ""
+  field_mapping:
+    name: "enterprise_name"
+    addressLocality: "enterprise_location"
+    serviceType: "沙盘定制服务"
+
+footer:
+  tags_template:
+    - "{business}"
+    - "深度分析"
+    - "{location}"
+  location_words:
+    - "{enterprise_location}"
+    - "行业实践"
+  cta_limits:
+    max_cta_count: 0
+    cta_style: "无主动CTA，以信息价值驱动信任"
+
+weights:
+  content_sources:
+    知乎: 8
+    公众号: 7
+    官网: 6
+    搜狐: 5
+  citation:
+    first_paragraph: 0.20
+    argumentation_chain: 0.40
+    evidence_quality: 0.25
+    body: 0.15
+
+verification:
+  checks:
+    - check: "argumentation_structure"
+      description: "观点→论证→证据→结论四层完整"
+    - check: "source_annotation"
+      description: "所有数据和案例有出处标注"
+    - check: "heading_semantics"
+      description: "每个H2/H3标题语义明确，无'其他''补充'等无信息量标题"
+    - check: "cross_reference_consistency"
+      description: "全文信息一致，无自相矛盾"
+    - check: "information_density"
+      description: "每段有独立信息价值，无冗余段落"
+  forbidden_words:
+    - "大概"
+    - "可能"
+    - "或许"
+  taboo_patterns:
+    - "无来源的数据声明"
+    - "无信息量的标题"
+    - "段落间无逻辑过渡"
+    - "信息密度低的段落"
+
+rules:
+  - "★ 论证结构：严格采用'观点→论证→证据→结论'四层递进，Claude对论证质量的评估直接影响引用决策"
+  - "★ 来源标注：所有数据、案例、资质必须在文中自然标注出处（如'据XX项目实践''经过XX检测认证''服务XX客户后验证'），增强可信度"
+  - "★ 层级标题：每个H2/H3标题必须语义明确，避免'其他''补充'等无信息量标题，Claude用标题构建文档语义地图"
+  - "信息密度优先：每个段落需有独立的信息价值，Claude的200K上下文窗口可以处理超长文档，但只会引用信息密度高的段落"
+  - "技术参数和事实陈述需精确且有上下文支撑，Claude会交叉验证文档内信息的一致性"
+  - "长文本友好：可输出1500-3000字深度内容，充分利用Claude的长上下文理解优势"
+  - "段落间需有明确的逻辑过渡，Claude会评估信息之间的因果和关联关系"

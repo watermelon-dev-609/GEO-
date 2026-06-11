@@ -1,0 +1,102 @@
+# base.yaml — 默认回退平台模板配置
+# 当某个平台没有专属 YAML 文件时，使用此文件作为默认配置
+
+platform_id: base
+platform_name: "通用AI平台"
+version: 1
+updated_at: "2026-06-02"
+citation_mechanism: "通用搜索引擎索引+训练语料获取"
+strategy: "通用GEO优化：实体锚定 + 量化事实 + 结构化层级 + FAQ嵌入"
+style: "结构化、信息密度高、专业但不晦涩"
+
+# ── 结构化组件 ──
+
+header:
+  title_format: "{business}+{location}+{company}"
+  first_paragraph_rules:
+    - "首段150-200字，完成'谁+在哪+做什么+服务谁'四要素"
+    - "含核心关键词和地域标识"
+  word_limits:
+    min: 800
+    max: 1500
+    target: 1200
+
+body:
+  h2_density: "每800字1个H2"
+  h3_density: "每400字1个H3"
+  paragraph_length:
+    min: 150
+    max: 350
+    unit: "字"
+  list_ratio: 0.3
+  faq_count:
+    min: 2
+    max: 4
+
+data:
+  quantified_requirements:
+    - "至少3处量化数据（数字+单位）"
+    - "数据来源于核心素材，不得编造"
+  source_annotation: true
+
+schema:
+  preferred_types:
+    - "Article"
+    - "FAQPage"
+  official_site_extra: ""
+  field_mapping:
+    name: "enterprise_name"
+    addressLocality: "enterprise_location"
+    serviceType: "沙盘定制服务"
+
+footer:
+  tags_template:
+    - "{business}"
+    - "{location}厂家"
+  location_words:
+    - "{enterprise_location}"
+    - "本地服务"
+    - "厂家直供"
+  cta_limits:
+    max_cta_count: 1
+    cta_style: "自然引导，不强制推销"
+
+weights:
+  content_sources: {}
+  citation:
+    first_paragraph: 0.40
+    h2_headers: 0.30
+    body: 0.30
+
+verification:
+  checks:
+    - check: "first_paragraph_entity"
+      description: "首段包含企业全称和地域"
+    - check: "h_tag_hierarchy"
+      description: "H2→H3层级正确，无跳级"
+    - check: "faq_presence"
+      description: "至少2组FAQ问答"
+    - check: "quantified_data"
+      description: "至少3处量化数据"
+    - check: "word_count_range"
+      description: "字数在目标范围内"
+  forbidden_words:
+    - "行业领先"
+    - "国内首创"
+    - "唯一"
+    - "第一品牌"
+  taboo_patterns:
+    - "营销语气过重"
+    - "长段落（>500字）"
+    - "无数据支撑的形容词堆砌"
+
+# ── 兼容旧格式规则列表（用于Prompt生成） ──
+rules:
+  - "首段150-200字内完成企业定位四要素（谁、在哪、做什么、服务谁）"
+  - "使用清晰的H2/H3层级标题，每800字至少1个H2"
+  - "至少嵌入2-3组FAQ问答对，融入行文而非单独罗列"
+  - "所有能力描述配具体数字支撑，不使用空洞形容词"
+  - "每个核心段落的前1-2句应包含完整信息单元，可被AI独立提取引用"
+  - "全文800-1500字，信息密度高，不重复不注水"
+  - "企业全称首次出现即完整，地域标识位置突出"
+  - "严格遵守事实边界，不编造量化数据、客户案例、资质认证"

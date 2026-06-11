@@ -1,37 +1,54 @@
-# API Key 配置文件
+# API Key 配置文件（v2.0）
 # 复制此文件为 api_keys.yaml 并填入您的API Key
 # api_keys.yaml 已加入 .gitignore，不会提交到版本控制
-
+#
 # 按需配置，未配置的平台将自动跳过
+# 支持 ${ENV_VAR} 占位符引用 .env 中的环境变量
+#
 # 获取API Key的地址：
-#   文心一言:  https://console.bce.baidu.com/
-#   通义千问:  https://dashscope.console.aliyun.com/
-#   DeepSeek:  https://platform.deepseek.com/
-#   豆包:      https://console.volcengine.com/ark/
-#   元宝:      https://console.cloud.tencent.com/hunyuan
-#   Kimi:      https://platform.moonshot.cn/
-#   讯飞星火:  https://console.xfyun.cn/
+#   DeepSeek:    https://platform.deepseek.com/
+#   豆包:         https://console.volcengine.com/ark/
+#   Kimi:         https://platform.moonshot.cn/
+#   通义千问:      https://dashscope.console.aliyun.com/
+#   文心一言:      https://console.bce.baidu.com/
+#   讯飞星火:      https://console.xfyun.cn/
+#   元宝:          https://console.cloud.tencent.com/hunyuan
+#   Claude:       https://console.anthropic.com/
+#   OpenAI:       https://platform.openai.com/
 
 platforms:
+  # ── 云平台 ──
   wenxin:
-    api_key: "your-baidu-api-key-here"
-    secret_key: "your-baidu-secret-key-here"
+    api_key: ${WENXIN_API_KEY}
+    secret_key: ${WENXIN_SECRET_KEY}
 
   tongyi:
-    api_key: "your-dashscope-api-key-here"
+    api_key: ${TONGYI_API_KEY}
 
   deepseek:
-    api_key: "your-deepseek-api-key-here"
+    api_key: ${DEEPSEEK_API_KEY}
 
   doubao:
-    api_key: "your-volcengine-api-key-here"
+    api_key: ${DOUBAO_API_KEY}
 
   yuanbao:
-    api_key: "your-hunyuan-api-key-here"
-    secret_id: "your-tencent-secret-id-here"
+    api_key: ${YUANBAO_API_KEY}
+    secret_id: ${YUANBAO_SECRET_ID}
 
   kimi:
-    api_key: "your-kimi-api-key"
+    api_key: ${KIMI_API_KEY}
 
   xinghuo:
-    api_key: "your-xinghuo-api-key"
+    api_key: ${XINGHUO_API_KEY}
+
+  claude:
+    api_key: ${CLAUDE_API_KEY}
+
+  openai:
+    api_key: ${OPENAI_API_KEY}
+
+  # ── 本地 LLM（无需 API Key，配置 base_url 即可在 settings.yaml 中启用）──
+  # ollama:
+  #   api_key: "ollama"        # Ollama 不需要真实 key
+  # lmstudio:
+  #   api_key: "lmstudio"      # LM Studio 不需要真实 key

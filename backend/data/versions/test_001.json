@@ -1,0 +1,40 @@
+[
+  {
+    "version_id": "362acf293bf6",
+    "text_id": "test_001",
+    "title": "V1",
+    "content": "content v1 hello world",
+    "platform": "",
+    "version_num": 1,
+    "created_at": "2026-05-30 17:20:34",
+    "word_count": 22,
+    "tags": [],
+    "notes": ""
+  },
+  {
+    "version_id": "ee04ffe56dd9",
+    "text_id": "test_001",
+    "title": "V2",
+    "content": "content v2 modified text",
+    "platform": "",
+    "version_num": 2,
+    "created_at": "2026-05-30 17:20:34",
+    "word_count": 24,
+    "tags": [],
+    "notes": ""
+  },
+  {
+    "version_id": "23b163704b90",
+    "text_id": "test_001",
+    "title": "回滚至V1",
+    "content": "content v1 hello world",
+    "platform": "",
+    "version_num": 3,
+    "created_at": "2026-05-30 17:20:34",
+    "word_count": 22,
+    "tags": [
+      "回滚"
+    ],
+    "notes": "从版本1回滚"
+  }
+]

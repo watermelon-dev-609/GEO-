@@ -32,6 +32,9 @@ export const useGeoStore = defineStore('geo', () => {
 
   // ── 系统配置 ──
   const llmConfigs = ref([])
+  const enterpriseName = ref('')
+  const enterpriseLocation = ref('')
+  const enterpriseWebsite = ref('')
 
   // ── 评测历史 ──
   const evalHistory = ref([])
@@ -82,7 +85,12 @@ export const useGeoStore = defineStore('geo', () => {
   function setRewriteResults(results) { rewriteResults.value = results }
   function setEvaluationResult(result) { evaluationResult.value = result }
   function setSelectedPlatforms(platforms) { selectedPlatforms.value = platforms }
-  function setLLMConfigs(configs) { llmConfigs.value = configs }
+  function setLLMConfigs(configs, enterprise_name = '', enterprise_location = '', enterprise_website = '') {
+    llmConfigs.value = configs
+    if (enterprise_name) enterpriseName.value = enterprise_name
+    if (enterprise_location) enterpriseLocation.value = enterprise_location
+    if (enterprise_website) enterpriseWebsite.value = enterprise_website
+  }
   function setProcessing(val, msg = '') {
     isProcessing.value = val
     processingMessage.value = msg
@@ -106,7 +114,6 @@ export const useGeoStore = defineStore('geo', () => {
       const res = await getEvalHistory()
       evalHistory.value = res.data.items || []
     } catch (e) {
-      console.error('fetchEvalHistory failed:', e)
       if (e.response?.status !== 404) {
         ElMessage.error('加载评测历史失败: ' + (e.response?.data?.detail || e.message))
       }
@@ -149,6 +156,108 @@ export const useGeoStore = defineStore('geo', () => {
 
   function clearReoptimizeContext() {
     reoptimizeContext.value = null
+  }
+
+  // ── 流量与转化追踪 (Phase 5) ──
+  const trafficConfig = ref(null)
+  const trafficSummary = ref(null)
+  const trafficTrend = ref([])
+  const trafficLoading = ref(false)
+  const conversionSummary = ref(null)
+  const conversionTrend = ref([])
+  const funnelData = ref(null)
+  const conversionsByPlatform = ref([])
+  const conversionLoading = ref(false)
+  const utmCampaigns = ref([])
+  const utmLoading = ref(false)
+
+  async function fetchTrafficConfig() {
+    try {
+      const { getTrafficConfig } = await import('../api/index.js')
+      const res = await getTrafficConfig()
+      trafficConfig.value = res.data?.sources || null
+    } catch (e) {
+      ElMessage.error('加载流量配置失败: ' + (e.response?.data?.detail || e.message))
+    }
+  }
+
+  async function fetchTrafficSummary(params) {
+    trafficLoading.value = true
+    try {
+      const { getTrafficSummary } = await import('../api/index.js')
+      const res = await getTrafficSummary(params)
+      trafficSummary.value = res.data || null
+    } catch (e) {
+      ElMessage.error('加载流量数据失败: ' + (e.response?.data?.detail || e.message))
+    } finally {
+      trafficLoading.value = false
+    }
+  }
+
+  async function fetchTrafficTrend(params) {
+    try {
+      const { getTrafficTrend } = await import('../api/index.js')
+      const res = await getTrafficTrend(params)
+      trafficTrend.value = res.data?.trend || []
+    } catch (e) {
+      ElMessage.error('加载流量趋势失败: ' + (e.response?.data?.detail || e.message))
+    }
+  }
+
+  async function fetchFunnelData(params) {
+    try {
+      const { getFunnelData } = await import('../api/index.js')
+      const res = await getFunnelData(params)
+      funnelData.value = res.data || null
+    } catch (e) {
+      ElMessage.error('加载漏斗数据失败: ' + (e.response?.data?.detail || e.message))
+    }
+  }
+
+  async function fetchConversionSummary(params) {
+    conversionLoading.value = true
+    try {
+      const { getAttribution } = await import('../api/index.js')
+      const res = await getAttribution(params)
+      conversionSummary.value = res.data || null
+    } catch (e) {
+      ElMessage.error('加载转化数据失败: ' + (e.response?.data?.detail || e.message))
+    } finally {
+      conversionLoading.value = false
+    }
+  }
+
+  async function fetchConversionsByPlatform(params) {
+    try {
+      const { getConversionsByPlatform } = await import('../api/index.js')
+      const res = await getConversionsByPlatform(params)
+      conversionsByPlatform.value = res.data?.platforms || []
+    } catch (e) {
+      ElMessage.error('加载平台转化数据失败: ' + (e.response?.data?.detail || e.message))
+    }
+  }
+
+  async function fetchConversionTrend(params) {
+    try {
+      const { getConversionTrend } = await import('../api/index.js')
+      const res = await getConversionTrend(params)
+      conversionTrend.value = res.data?.trend || []
+    } catch (e) {
+      ElMessage.error('加载转化趋势失败: ' + (e.response?.data?.detail || e.message))
+    }
+  }
+
+  async function fetchUTMCampaigns() {
+    utmLoading.value = true
+    try {
+      const { listCampaigns } = await import('../api/index.js')
+      const res = await listCampaigns()
+      utmCampaigns.value = res.data?.campaigns || []
+    } catch (e) {
+      ElMessage.error('加载UTM计划失败: ' + (e.response?.data?.detail || e.message))
+    } finally {
+      utmLoading.value = false
+    }
   }
 
   function reset() {
@@ -205,7 +314,7 @@ export const useGeoStore = defineStore('geo', () => {
   return {
     currentStep, originalText, cleanedText, currentSandtableType,
     dimensions, rewriteResults, evaluationResult, selectedPlatforms,
-    projectHistory, isProcessing, processingMessage, llmConfigs,
+    projectHistory, isProcessing, processingMessage, llmConfigs, enterpriseName, enterpriseLocation, enterpriseWebsite,
     hasCleanedText, hasResults, hasEvaluation, configuredPlatforms,
     setOriginalText, setCleanedText, setSandtableType, setDimensions,
     setRewriteResults, setEvaluationResult, setSelectedPlatforms,
@@ -213,5 +322,12 @@ export const useGeoStore = defineStore('geo', () => {
     evalHistory, evalHistoryLoading, fetchEvalHistory, pushToHistory, deleteEvalHistoryItem,
     recentEvaluations, averageEvalScore, scoreTrend,
     reoptimizeContext, setReoptimizeContext, clearReoptimizeContext,
+    // Traffic, conversion, UTM
+    trafficConfig, trafficSummary, trafficTrend, trafficLoading,
+    conversionSummary, conversionTrend, funnelData, conversionsByPlatform, conversionLoading,
+    utmCampaigns, utmLoading,
+    fetchTrafficConfig, fetchTrafficSummary, fetchTrafficTrend,
+    fetchFunnelData, fetchConversionSummary, fetchConversionsByPlatform,
+    fetchConversionTrend, fetchUTMCampaigns,
   }
 })

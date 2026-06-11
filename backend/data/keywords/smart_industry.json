@@ -1,0 +1,88 @@
+{
+  "sandtable_type": "smart_industry",
+  "label": "智慧工业沙盘",
+  "keywords": {
+    "brand": [
+      {
+        "word": "武汉微艺达",
+        "weight": "core",
+        "status": "optimized"
+      },
+      {
+        "word": "微艺达智能科技",
+        "weight": "core",
+        "status": "optimized"
+      },
+      {
+        "word": "武汉沙盘定制",
+        "weight": "core",
+        "status": "optimized"
+      },
+      {
+        "word": "沙盘模型厂家",
+        "weight": "core",
+        "status": "optimized"
+      },
+      {
+        "word": "武汉沙盘模型",
+        "weight": "core",
+        "status": "optimized"
+      }
+    ],
+    "scene": [
+      {
+        "word": "智慧交通沙盘定制",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "智慧城市数字沙盘",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "工业仿真沙盘",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "智慧农业物联网沙盘",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "军事地形沙盘模型",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "数字多媒体展厅",
+        "weight": "core",
+        "status": "pending"
+      }
+    ],
+    "longtail": [
+      {
+        "word": "沙盘模型定制多少钱",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "武汉沙盘厂家哪家好",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "数字沙盘制作流程",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "智慧交通沙盘方案",
+        "weight": "longtail",
+        "status": "pending"
+      }
+    ]
+  },
+  "updated_at": "2026-05-28T20:50:17.343924"
+}

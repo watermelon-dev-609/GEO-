@@ -84,17 +84,53 @@
             </el-form>
           </div>
 
-          <el-button
-            type="primary"
-            size="large"
-            :icon="MagicStick"
-            :loading="isCleaning"
-            @click="startCleaning"
-            style="width: 100%; margin-top: 8px;"
-            :disabled="!rawText && !fileContent"
-          >
-            {{ isCleaning ? '正在智能清洗...' : '开始智能清洗' }}
-          </el-button>
+          <div class="clean-action-row">
+            <el-button
+              type="primary"
+              size="large"
+              :icon="MagicStick"
+              :loading="isCleaning"
+              @click="startCleaning"
+              class="clean-btn"
+              :disabled="!rawText && !fileContent"
+            >
+              {{ isCleaning ? '正在智能清洗...' : '开始智能清洗' }}
+            </el-button>
+            <el-popover
+              placement="bottom-end"
+              :width="320"
+              trigger="click"
+              :show-arrow="false"
+            >
+              <template #reference>
+                <el-button
+                  size="large"
+                  :icon="Setting"
+                  class="clean-rules-btn"
+                  :loading="rulesLoading"
+                >清洗设置</el-button>
+              </template>
+              <div class="rules-popover">
+                <div class="rules-popover-title">清洗规则设置</div>
+                <div class="rules-popover-desc">控制智能清洗时启用的规则，开关即时生效</div>
+                <div
+                  v-for="rule in cleaningRules"
+                  :key="rule.key"
+                  class="rule-item"
+                >
+                  <div class="rule-header">
+                    <el-switch
+                      v-model="rule.enabled"
+                      size="small"
+                      @change="onRuleToggle(rule)"
+                    />
+                    <span class="rule-label">{{ rule.label }}</span>
+                  </div>
+                  <div class="rule-desc">{{ rule.description }}</div>
+                </div>
+              </div>
+            </el-popover>
+          </div>
         </el-card>
       </el-col>
 
@@ -106,7 +142,7 @@
               <div v-if="cleanedText">
                 <el-tag type="success" size="small">清洗完成</el-tag>
                 <span style="margin-left: 8px; font-size: 12px; color: #9B9EAA;">
-                  字数: {{ rawText.length }} → {{ cleanedText.length }}
+                  字数: {{ beforeText.length || rawText.length }} → {{ cleanedText.length }}
                 </span>
               </div>
             </div>
@@ -124,7 +160,7 @@
                 清洗后 <strong>{{ cleanedText.length }}</strong> 字符
               </span>
               <el-tag :type="changePercent > 30 ? 'warning' : 'success'" size="small">
-                {{ changePercent > 0 ? `精简 ${changePercent}%` : '无变化' }}
+                {{ changePercent > 0 ? `精简 ${changePercent}%` : changePercent < 0 ? `扩充 ${Math.abs(changePercent)}%` : '无变化' }}
               </el-tag>
             </div>
 
@@ -178,11 +214,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
-import { cleanText, extractInfo, quickDiagnosis } from '../api'
+import { cleanText, quickDiagnosis, getCleaningRules, updateCleaningRules } from '../api'
 import { ElMessage } from 'element-plus'
+import { MagicStick, Setting } from '@element-plus/icons-vue'
 import { SANDTABLE_TYPES, DIAGNOSIS_LABELS } from '../constants'
 
 const router = useRouter()
@@ -199,11 +236,53 @@ const viewMode = ref('cleaned')
 const dimensions = ref(null)
 const detectedType = ref('')
 const changePercent = computed(() => {
-  if (!beforeText.value.length) return 0
+  if (!beforeText.value.length || !cleanedText.value.length) return 0
   return Math.round((1 - cleanedText.value.length / beforeText.value.length) * 100)
 })
 
 const sandtableTypes = SANDTABLE_TYPES
+
+// ── 清洗规则设置 ──
+const cleaningRules = ref([])
+const rulesLoading = ref(false)
+
+async function loadCleaningRules() {
+  rulesLoading.value = true
+  try {
+    const res = await getCleaningRules()
+    cleaningRules.value = res.data.rules || []
+  } catch (e) {
+    ElMessage.error('加载清洗规则失败: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    rulesLoading.value = false
+  }
+}
+
+async function onRuleToggle(rule) {
+  try {
+    await updateCleaningRules({ rules: cleaningRules.value })
+  } catch (e) {
+    ElMessage.error('保存清洗规则失败: ' + (e.response?.data?.detail || e.message))
+    // 回滚开关状态
+    rule.enabled = !rule.enabled
+  }
+}
+
+onMounted(() => {
+  loadCleaningRules()
+  if (store.originalText && !rawText.value) {
+    rawText.value = store.originalText
+  }
+  if (store.cleanedText && !cleanedText.value) {
+    cleanedText.value = store.cleanedText
+    beforeText.value = store.originalText
+    dimensions.value = store.dimensions
+    detectedType.value = store.currentSandtableType
+  }
+  if (store.currentSandtableType && !sandtableType.value) {
+    sandtableType.value = store.currentSandtableType
+  }
+})
 
 const dimList = [
   { key: 'core_advantages', label: '核心优势' },
@@ -296,8 +375,9 @@ async function startDiagnosis() {
   try {
     const res = await quickDiagnosis({ text: diagText.value, sandtable_type: diagSandtable.value })
     diagResult.value = res.data
-    // 把诊断文本同步到 rawText，方便后续一键优化
     rawText.value = diagText.value
+    store.setOriginalText(diagText.value)
+    if (diagSandtable.value) store.setSandtableType(diagSandtable.value)
     ElMessage.success(`GEO健康度: ${res.data.overall_score}/100`)
   } catch (e) {
     ElMessage.error('诊断失败: ' + (e.response?.data?.detail || e.message))
@@ -351,4 +431,15 @@ async function goDiagnosisToWorkshop() {
 .diag-dim { margin-bottom: 10px; }
 .diag-dim-header { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 2px; }
 .diag-dim-note { font-size: 11px; color: #9B9EAA; margin-top: 2px; }
+.clean-action-row { display: flex; gap: 8px; margin-top: 8px; }
+.clean-action-row .clean-btn { flex: 1; }
+.clean-action-row .clean-rules-btn { flex-shrink: 0; }
+.rules-popover { padding: 4px 0; }
+.rules-popover-title { font-size: 15px; font-weight: 600; color: #2D3142; margin-bottom: 4px; }
+.rules-popover-desc { font-size: 12px; color: #9B9EAA; margin-bottom: 16px; }
+.rule-item { padding: 10px 0; border-bottom: 1px solid #F0EFEA; }
+.rule-item:last-child { border-bottom: none; }
+.rule-header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.rule-label { font-size: 14px; font-weight: 500; color: #2D3142; }
+.rule-desc { font-size: 12px; color: #9B9EAA; padding-left: 44px; line-height: 1.5; }
 </style>

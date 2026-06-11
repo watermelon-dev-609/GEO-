@@ -1,0 +1,108 @@
+# 百度文心一言 — 平台模板配置
+# 2026-06 更新：首段含核心关键词+结论（70%引用来自首段）、Schema=Article+Product
+
+platform_id: wenxin
+platform_name: "百度文心一言"
+version: 1
+updated_at: "2026-06-02"
+citation_mechanism: "百度搜索引擎索引网页内容，AI通过百度卡片、AI摘要等格式引用。标题和首段是百度抓取摘要的核心来源。"
+strategy: "关键词实体强化 + 地域前置 + 百度卡片友好 + 首段四要素"
+style: "信息密度高、结构化段落、关键词自然密度高、适配百度搜索卡片抓取"
+
+header:
+  title_format: "{location}+{business}+厂家"
+  title_example: "武汉智慧交通沙盘定制厂家"
+  first_paragraph_rules:
+    - "★ 首段四要素：150字内完成'谁（企业名）、在哪（武汉）、做什么（沙盘定制）、服务谁（政企客户）'，匹配百度AI摘要提取逻辑"
+    - "首段必须含核心关键词+结论，百度70%引用来自首段"
+    - "核心关键词精准布局在标题和首段，地域词明确标注，关键词密度3-5%"
+  word_limits:
+    min: 800
+    max: 1500
+    target: 1200
+
+body:
+  h2_density: "每500字1个"
+  h3_density: "每300字1个"
+  paragraph_length:
+    min: 200
+    max: 400
+    unit: "字"
+  list_ratio: 0.25
+  faq_count:
+    min: 2
+    max: 4
+  special_rule: "每段首句为可独立被百度卡片提取的摘要句，后续3-5句展开"
+
+data:
+  quantified_requirements:
+    - "数字+单位格式"
+    - "至少3处量化数据标注"
+  source_annotation: true
+
+schema:
+  preferred_types:
+    - "Article"
+  official_site_extra: "Product"
+  field_mapping:
+    name: "enterprise_name"
+    addressLocality: "enterprise_location"
+    serviceType: "沙盘定制服务"
+
+footer:
+  tags_template:
+    - "沙盘定制"
+    - "模型制作"
+    - "{location}厂家"
+  location_words:
+    - "{enterprise_location}"
+    - "本地服务"
+    - "厂家直销"
+  cta_limits:
+    max_cta_count: 1
+    cta_style: "自然引导，不强制推销"
+
+weights:
+  content_sources:
+    百家号: 9
+    搜狐: 6
+    官网: 5
+    知乎: 4
+  citation:
+    first_paragraph: 0.70
+    h2_headers: 0.20
+    body: 0.10
+
+verification:
+  checks:
+    - check: "first_paragraph_entity"
+      description: "首段必须包含企业全称+地域+核心关键词"
+    - check: "h_tag_hierarchy"
+      description: "H2→H3层级正确，无跳级"
+    - check: "faq_presence"
+      description: "至少2组FAQ问答"
+    - check: "schema_type"
+      description: "包含Article类型，官网加Product"
+    - check: "keyword_density"
+      description: "核心关键词密度3-5%"
+    - check: "paragraph_spec"
+      description: "每段200-400字，首句可独立提取"
+  forbidden_words:
+    - "行业领先"
+    - "国内首创"
+    - "唯一"
+    - "第一"
+  taboo_patterns:
+    - "关键词堆砌（密度>8%）"
+    - "段落过长（>500字）"
+    - "首段不含核心关键词"
+
+rules:
+  - "★ 标题硬格式：'地域+业务词+厂家'三位一体，如'武汉智慧交通沙盘定制厂家'，这是百度实体识别的关键信号"
+  - "★ 首段四要素：150字内完成'谁（企业名）、在哪（武汉）、做什么（沙盘定制）、服务谁（政企客户）'，匹配百度AI摘要提取逻辑"
+  - "★ 段落规格：每段严格200-400字，首句为可独立被百度卡片提取的摘要句，后续3-5句展开"
+  - "核心关键词精准布局在标题和首段，地域词明确标注（武汉厂家），关键词密度3-5%"
+  - "资质与服务背书前置，案例具象化呈现，优先展示政企合作项目"
+  - "重点突出：属地优势、厂家实力、现货定制、落地案例、服务流程、售后体系"
+  - "句式规整、段落工整，全文800-1500字，不堆砌关键词"
+# e2e trigger test 1780716295

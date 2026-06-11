@@ -1,0 +1,19 @@
+{
+  "run_id": "adapt_20260606_134713_c5942d",
+  "platform_id": "doubao",
+  "trigger_event": "{\"raw\": \"live_api_test\"}",
+  "stage": "monitor_detected",
+  "status": "pending",
+  "created_at": "2026-06-06T05:47:13.255704+00:00",
+  "completed_at": "",
+  "articles_affected": 0,
+  "articles_regenerated": 0,
+  "articles_validated": 0,
+  "articles_published": 0,
+  "rollback_version_id": "",
+  "template_version_before": "v1",
+  "template_version_after": "",
+  "validation_errors": [],
+  "notes": [],
+  "stage_label": "监控发现变化"
+}

@@ -20,11 +20,15 @@ api.interceptors.response.use(
 // ── 文本清洗 ──
 export const cleanText = (data) => api.post('/cleaning/clean', data)
 export const extractInfo = (data) => api.post('/cleaning/extract', data)
+export const getCleaningRules = () => api.get('/cleaning/rules')
+export const updateCleaningRules = (data) => api.put('/cleaning/rules', data)
 
 // ── GEO文案重构 ──
 export const rewriteText = (data, options) => api.post('/geo/rewrite', data, options)
 export const getSandtableProfile = (type) => api.get(`/geo/profiles/${type}`)
 export const getPlatformRules = (platform) => api.get(`/geo/platform-rules/${platform}`)
+export const getOptimizationRules = () => api.get('/geo/optimization-rules')
+export const updateOptimizationRules = (data) => api.put('/geo/optimization-rules', data)
 
 // ── JSON-LD ──
 export const generateJSONLD = (data) => api.post('/jsonld/generate', data)
@@ -37,6 +41,7 @@ export const getEvalQuestions = () => api.get('/evaluate/questions')
 export const quickBrandCheck = (data) => api.post('/evaluate/quick-brand-check', data)
 
 // 新评测 API
+export const generateEvalQuestions = (data) => api.post('/evaluate/generate-questions', data)
 export const getEvalDimensions = () => api.get('/evaluate/dimensions')
 export const getEvalSession = (id) => api.get(`/evaluate/session/${id}`)
 export const cancelEval = (id) => api.post(`/evaluate/cancel/${id}`)
@@ -114,9 +119,20 @@ export function startEvalSSE(data, onEvent, onError) {
           }
         }
       }
+
+      if (buffer.trim() && buffer.startsWith('data: ')) {
+        try {
+          const payload = JSON.parse(buffer.slice(6))
+          onEvent(payload.event || 'message', payload)
+        } catch (e) {
+          console.warn('[SSE] final buffer parse failed:', buffer.slice(0, 80), e.message)
+        }
+      }
     })
     .catch((err) => {
-      if (err.name !== 'AbortError') {
+      if (err.name === 'TimeoutError' || err.name === 'AbortError' && timeoutSignal.aborted && !controller.signal.aborted) {
+        onError(new Error('评测请求超时（300秒），请检查网络或减少评测文本量后重试'))
+      } else if (err.name !== 'AbortError') {
         onError(err)
       }
     })
@@ -166,6 +182,9 @@ export const deleteCompetitor = (id) => api.delete(`/competitors/${id}`)
 export const addSnapshot = (id, data) => api.post(`/competitors/${id}/snapshot`, data)
 export const compareCompetitors = (data) => api.post('/competitors/compare', data)
 export const generateCompetitorReport = (data) => api.post('/competitors/report', data)
+export const triggerCompetitorMonitor = () => api.post('/competitors/monitor/trigger')
+export const getCompetitorMonitorHistory = (days) => api.get('/competitors/monitor/history', { params: { days } })
+export const compareCompetitorMonitorCycles = (cycle1, cycle2) => api.get('/competitors/monitor/compare', { params: { cycle1, cycle2 } })
 
 // ── 报表 ──
 export const previewReport = (data) => api.post('/reports/preview', data)
@@ -185,5 +204,162 @@ export const exportTemplatesAll = () => api.get('/templates/export/all')
 // ── 系统 ──
 export const getLLMConfig = () => api.get('/config/llm')
 export const healthCheck = () => api.get('/health')
+
+// ── 品牌收录监测 ──
+export const getMonitorOverview = () => api.get('/brand-monitor/overview')
+export const getMonitorHistory = (params) => api.get('/brand-monitor/history', { params })
+export const getMonitorSession = (id) => api.get(`/brand-monitor/history/${id}`)
+export const runMonitorCheck = (data) => api.post('/brand-monitor/check', data)
+export const runMonitorCheckAll = (data) => api.post('/brand-monitor/check-all', data)
+export const getMonitorTrend = (days) => api.get('/brand-monitor/trend', { params: { days } })
+export const getMonitorQueries = () => api.get('/brand-monitor/queries')
+export const addMonitorQuery = (data) => api.post('/brand-monitor/queries', data)
+export const deleteMonitorQuery = (id) => api.delete(`/brand-monitor/queries/${id}`)
+
+// ── 批量处理 ──
+export const batchClean = (data) => api.post('/batch/clean', data)
+export const batchDiagnose = (data) => api.post('/batch/diagnose', data)
+export const batchExport = (data) => api.post('/batch/export', data, { responseType: 'blob' })
+export const getBatchProgress = (taskId) => api.get(`/batch/progress/${taskId}`)
+export const cancelBatchTask = (taskId) => api.post('/batch/cancel', { task_id: taskId })
+export const listBatchTasks = () => api.get('/batch/tasks')
+
+export function startBatchOptimizeSSE(data, onEvent, onError) {
+  return createBatchSSE('/batch/optimize/stream', data, onEvent, onError)
+}
+
+export function startBatchEvaluateSSE(data, onEvent, onError) {
+  return createBatchSSE('/batch/evaluate/stream', data, onEvent, onError)
+}
+
+function createBatchSSE(url, data, onEvent, onError) {
+  const baseUrl = '/api'
+  const fullUrl = `${baseUrl}${url}`
+  const controller = new AbortController()
+  const timeoutMs = data._timeout || 600000
+  const timeoutSignal = AbortSignal.timeout(timeoutMs)
+  const combinedSignal = AbortSignal.any([controller.signal, timeoutSignal])
+
+  fetch(fullUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+    signal: combinedSignal,
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        let detail = response.statusText
+        try { const errBody = await response.json(); detail = errBody.detail || detail } catch {}
+        onError(new Error(detail || '请求失败'))
+        return
+      }
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const content = line.slice(6)
+            if (content === '[DONE]') { onEvent('done', {}); return }
+            try { onEvent('message', JSON.parse(content)) } catch (e) { console.warn('[BatchSSE] parse failed:', content.slice(0, 80)) }
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name === 'TimeoutError' || (err.name === 'AbortError' && timeoutSignal.aborted && !controller.signal.aborted)) {
+        onError(new Error('批量处理请求超时（600秒），请减少批量数量后重试'))
+      } else if (err.name !== 'AbortError') {
+        onError(err)
+      }
+    })
+
+  return { close: () => controller.abort() }
+}
+
+// ── 合规检测 ──
+export const checkCompliance = (data) => api.post('/compliance/check', data)
+
+// ── 用量监控 ──
+export const getUsageSummary = (date) => api.get('/usage/summary', { params: { date } })
+export const getUsageHistory = (days) => api.get('/usage/history', { params: { days } })
+export const getUsageAlerts = () => api.get('/usage/alerts')
+
+// ── 鉴权 ──
+export const authLogin = (data) => api.post('/auth/login', data)
+export const authLogout = () => api.post('/auth/logout')
+export const authStatus = () => api.get('/auth/status')
+
+// ── 系统日志 ──
+export const getRecentLogs = (params) => api.get('/logs/recent', { params })
+export const downloadLogs = () => api.get('/logs/download', { responseType: 'blob' })
+
+// ── 审计日志 ──
+export const getAuditLogs = (params) => api.get('/audit/logs', { params })
+export const exportAuditLogs = (date) => api.get('/audit/export', { params: { date }, responseType: 'blob' })
+
+// ── 模板引擎 (Phase 2) ──
+export const getEnginePlatforms = () => api.get('/templates/engine/platforms')
+export const getEnginePlatform = (id) => api.get(`/templates/engine/${id}`)
+export const updateEnginePlatform = (id, data) => api.put(`/templates/engine/${id}`, data)
+export const validateTemplate = (id) => api.post(`/templates/engine/${id}/validate`)
+export const getTemplateHistory = (id) => api.get(`/templates/engine/${id}/history`)
+export const diffTemplates = (id, v1, v2) => api.get(`/templates/engine/${id}/diff/${v1}/${v2}`)
+export const previewTemplate = (data) => api.post(`/templates/engine/${data.platform_id}/preview`, data)
+export const rollbackTemplate = (id, versionId) => api.post(`/templates/engine/${id}/rollback/${versionId}`)
+export const reloadTemplates = () => api.post('/templates/engine/reload')
+export const getWatchdogStatus = () => api.get('/templates/engine/watchdog-status')
+
+// ── 适配流水线 (Phase 3) ──
+export const getAdaptationRuns = (params) => api.get('/adaptation/runs', { params })
+export const createAdaptationRun = (params) => api.post('/adaptation/runs', null, { params })
+export const getAdaptationRun = (id) => api.get(`/adaptation/runs/${id}`)
+export const advanceAdaptationRun = (id, target_stage) => api.post(`/adaptation/runs/${id}/advance`, null, { params: { target_stage } })
+export const scanInventory = (id) => api.post(`/adaptation/runs/${id}/scan`)
+export const validateContent = (id, text) => api.post(`/adaptation/runs/${id}/validate`, null, { params: { text } })
+export const publishRun = (id, strategy) => api.post(`/adaptation/runs/${id}/publish`, null, { params: { strategy } })
+export const rollbackRun = (id) => api.post(`/adaptation/runs/${id}/rollback`)
+export const postTestRun = (id, days) => api.post(`/adaptation/runs/${id}/post-test`, null, { params: { days } })
+
+// ── 数据闭环 (Phase 4) ──
+export const getCurrentMetrics = (platform_id) => api.get('/feedback/metrics/current', { params: { platform_id } })
+export const getPlatformMetrics = (id) => api.get(`/feedback/metrics/${id}`)
+export const getMetricsTrend = (id, weeks) => api.get(`/feedback/metrics/${id}/trend`, { params: { weeks } })
+export const checkCitationDrop = (id) => api.get(`/feedback/citation-drop/${id}`)
+export const diagnosePlatform = (id) => api.post(`/feedback/diagnose/${id}`)
+export const getIterationHistory = (limit) => api.get('/feedback/iteration-history', { params: { limit } })
+
+// ── 流量与转化追踪 (Phase 5) ──
+// Traffic
+export const getTrafficConfig = () => api.get('/traffic/config')
+export const saveTrafficConfig = (data) => api.post('/traffic/config', data)
+export const fetchTrafficData = (source, date) => api.post(`/traffic/fetch/${source}`, null, { params: { date } })
+export const getTrafficSummary = (params) => api.get('/traffic/summary', { params })
+export const getDailyTraffic = (date) => api.get(`/traffic/daily/${date}`)
+export const getTrafficTrend = (params) => api.get('/traffic/trend', { params })
+export const getTrafficSources = (params) => api.get('/traffic/sources', { params })
+// Conversions
+export const recordConversionEvent = (data) => api.post('/conversions/event', data)
+export const getConversionEvents = (params) => api.get('/conversions/events', { params })
+export const deleteConversionEvent = (id) => api.delete(`/conversions/event/${id}`)
+export const getAttribution = (params) => api.get('/conversions/attribution', { params })
+export const getFunnelData = (params) => api.get('/conversions/funnel', { params })
+export const getConversionTrend = (params) => api.get('/conversions/trend', { params })
+export const getConversionsByPlatform = (params) => api.get('/conversions/by-ai-platform', { params })
+// UTM Campaigns
+export const createCampaign = (data) => api.post('/utm/campaigns', data)
+export const listCampaigns = (params) => api.get('/utm/campaigns', { params })
+export const getCampaign = (id) => api.get(`/utm/campaigns/${id}`)
+export const updateCampaign = (id, data) => api.put(`/utm/campaigns/${id}`, data)
+export const deleteCampaign = (id) => api.delete(`/utm/campaigns/${id}`)
+export const generateUTMLink = (id, platformId) => api.post(`/utm/campaigns/${id}/generate`, null, { params: { platform_id: platformId || '' } })
+export const batchGenerateUTM = (data) => api.post('/utm/batch-generate', data)
+// Full funnel analytics
+export const getFullFunnelAnalytics = (params) => api.get('/analytics/full-funnel', { params })
 
 export default api

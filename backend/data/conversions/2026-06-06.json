@@ -1,0 +1,22 @@
+[
+  {
+    "id": "conv_20260606_083155_22b790eb",
+    "timestamp": "2026-06-06T08:31:55.254822+00:00",
+    "type": "form_submit",
+    "value": 100.0,
+    "landing_page": "",
+    "referrer": "https://example.com?utm_source=doubao&utm_medium=ai_referral",
+    "source": "webhook",
+    "ai_platform": "doubao",
+    "ai_query": "",
+    "utm_source": "doubao",
+    "utm_medium": "ai_referral",
+    "utm_campaign": "",
+    "utm_term": "",
+    "utm_content": "",
+    "is_ai_referral": true,
+    "keyword": "",
+    "campaign_id": "",
+    "extra": {}
+  }
+]

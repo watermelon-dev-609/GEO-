@@ -48,7 +48,6 @@ PRELOADED_KEYWORDS = {
         {"word": "武汉沙盘厂家哪家好", "weight": "longtail", "status": "pending"},
         {"word": "数字沙盘制作流程", "weight": "longtail", "status": "pending"},
         {"word": "智慧交通沙盘方案", "weight": "longtail", "status": "pending"},
-        {"word": "AI生成式搜索优化怎么做", "weight": "longtail", "status": "pending"},
     ],
 }
 
@@ -259,7 +258,7 @@ async def export_keywords(sandtable_type: str):
 
     data = _load_keywords(sandtable_type)
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = csv.writer(output, quoting=csv.QUOTE_NONNUMERIC)
     writer.writerow(["分类", "关键词", "权重", "状态"])
     for cat, kws in data["keywords"].items():
         for kw in kws:

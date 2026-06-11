@@ -44,6 +44,12 @@
               <div class="plat-meta">
                 <span class="plat-category">{{ p.category }}</span>
                 <span class="plat-date" v-if="p.last_checked">{{ formatDate(p.last_checked) }}</span>
+                <el-tag v-if="p.data_source === 'web_search'" size="small" type="success" effect="plain">最新搜索</el-tag>
+                <el-tag v-else-if="p.data_source === 'llm_knowledge'" size="small" type="warning" effect="plain">LLM知识</el-tag>
+              </div>
+              <div class="plat-meta" v-if="p.knowledge_cutoff" style="margin-top:2px;">
+                <span style="font-size:11px;color:#9B9EAA;">数据时效: {{ p.knowledge_cutoff }}</span>
+                <span v-if="p.data_source === 'llm_knowledge' && isDataStale(p.last_checked)" style="font-size:11px;color:#D4956A;margin-left:6px;">⚠️ 可能已过时</span>
               </div>
               <div class="plat-summary" v-if="p.summary">{{ p.summary.length > 120 ? p.summary.slice(0, 120) + '...' : p.summary }}</div>
               <div class="plat-summary" v-else style="color:#c0c4cc;">暂无规则摘要，点击「AI生成摘要」或「查看详情」</div>
@@ -67,6 +73,10 @@
                   {{ detailData.status === 'changed' ? '规则变动' : '正常运行' }}
                 </span>
                 <span class="pd-meta-time" v-if="detailData.last_checked">上次检查 {{ formatDate(detailData.last_checked) }}</span>
+                <span class="pd-meta-tag" :class="detailData.current_rules?.data_source === 'web_search' ? 'ok' : 'alert'" style="margin-left:4px;" v-if="detailData.current_rules?.data_source">
+                  {{ detailData.current_rules?.data_source === 'web_search' ? 'Web搜索' : 'LLM知识' }}
+                </span>
+                <span class="pd-meta-time" v-if="detailData.current_rules?.knowledge_cutoff" style="margin-left:4px;">知识截止: {{ detailData.current_rules?.knowledge_cutoff }}</span>
               </div>
               <div class="pd-actions">
                 <el-button size="small" type="primary" plain @click="generateSummaryInDetail" :loading="checkingSingle">
@@ -383,8 +393,8 @@
             <el-table-column prop="name" label="竞品" width="130" fixed />
             <el-table-column v-for="plat in comparePlatforms" :key="plat" :label="plat" width="80">
               <template #default="{ row }">
-                <span class="heat-cell" :class="'heat-' + (row[plat] || '未见')">
-                  {{ row[plat] || '-' }}
+                <span class="heat-cell" :class="row[plat] ? 'heat-' + row[plat] : ''">
+                  {{ row[plat] || '无数据' }}
                 </span>
               </template>
             </el-table-column>
@@ -418,6 +428,47 @@
             </div>
           </div>
         </el-dialog>
+
+        <!-- ── 竞品自动监控面板 ── -->
+        <el-divider style="margin:24px 0 16px;" />
+        <div class="monitor-panel">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <h4 style="margin:0;">🔍 竞品自动监控</h4>
+            <div>
+              <el-button size="small" type="primary" :loading="monitorRunning" @click="triggerMonitor">
+                {{ monitorRunning ? '监控中...' : '立即执行监控' }}
+              </el-button>
+              <el-button size="small" @click="loadMonitorHistory" style="margin-left:8px;">刷新历史</el-button>
+            </div>
+          </div>
+          <p style="font-size:12px;color:#9B9EAA;margin:0 0 12px;">
+            自动探测竞品在AI平台上的引用情况，反推有效内容策略。周期：3天/次。
+          </p>
+
+          <!-- 最近监控结果 -->
+          <el-alert v-if="monitorError" :title="monitorError" type="error" show-icon closable @close="monitorError=''" style="margin-bottom:12px;" />
+          <el-alert v-if="monitorSuccess" :title="monitorSuccess" type="success" show-icon closable @close="monitorSuccess=''" style="margin-bottom:12px;" />
+
+          <el-table v-if="monitorHistory.length > 0" :data="monitorHistory" size="small" stripe max-height="200">
+            <el-table-column prop="date" label="日期" width="110" />
+            <el-table-column prop="competitors_probed" label="竞品数" width="70" />
+            <el-table-column prop="platforms_probed" label="平台数" width="70" />
+            <el-table-column prop="total_alerts" label="变化告警" width="80">
+              <template #default="{ row }">
+                <el-tag v-if="row.total_alerts > 0" size="small" type="warning">{{ row.total_alerts }}</el-tag>
+                <span v-else style="color:#9B9EAA;">0</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="80">
+              <template #default="{ row }">
+                <el-tag v-if="row.no_data" size="small" type="info">无数据</el-tag>
+                <el-tag v-else-if="row.error" size="small" type="danger">错误</el-tag>
+                <el-tag v-else size="small" type="success">完成</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else description="暂无监控数据，点击「立即执行监控」开始" :image-size="60" />
+        </div>
       </el-tab-pane>
 
       <!-- Tab 3: 关键词策略 -->
@@ -533,13 +584,13 @@
         </template>
 
         <!-- 添加/编辑关键词弹窗 -->
-        <el-dialog v-model="kwAddVisible" :title="editingKw ? '编辑关键词' : '添加关键词'" width="420px">
+        <el-dialog v-model="kwAddVisible" :title="editingKw ? '编辑关键词' : '添加关键词'" width="420px" @closed="resetKwForm">
           <el-form label-position="top" size="small">
             <el-form-item label="关键词">
               <el-input v-model="kwForm.word" placeholder="输入关键词..." />
             </el-form-item>
             <el-form-item label="分类">
-              <el-select v-model="kwForm.category" style="width:100%;">
+              <el-select v-model="kwForm.category" style="width:100%;" :disabled="!!editingKw">
                 <el-option v-for="c in kwCategories" :key="c.key" :label="c.label" :value="c.key" />
               </el-select>
             </el-form-item>
@@ -558,7 +609,7 @@
             </el-form-item>
           </el-form>
           <template #footer>
-            <el-button @click="kwAddVisible = false">取消</el-button>
+            <el-button @click="resetKwForm(); kwAddVisible = false">取消</el-button>
             <el-button type="primary" @click="saveKeyword" :loading="kwSaving">保存</el-button>
           </template>
         </el-dialog>
@@ -569,7 +620,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { Delete, Edit, Reading, List, InfoFilled, Warning, Clock, Plus, Upload } from '@element-plus/icons-vue'
+import { Delete, Edit, Reading, List, InfoFilled, Warning, Clock, Plus } from '@element-plus/icons-vue'
 import {
   listPlatforms, getPlatformDetail, updatePlatformRules, generateLLMSummary,
   checkAllPlatforms, checkSinglePlatform, getSchedulerStatus, startScheduler, stopScheduler,
@@ -579,7 +630,8 @@ import {
   addSnapshot, compareCompetitors, generateCompetitorReport,
 } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { AI_PLATFORMS, KEYWORD_CATEGORIES, DIMENSION_LABELS } from '../constants'
+import { AI_PLATFORMS, KEYWORD_CATEGORIES, SANDTABLE_TYPES } from '../constants'
+import { triggerCompetitorMonitor, getCompetitorMonitorHistory } from '../api'
 
 const activeTab = ref('platform')
 
@@ -623,6 +675,7 @@ async function triggerCheckAll() {
   try {
     await checkAllPlatforms()
     ElMessage.success('全量平台规则检查已在后台启动，请稍后刷新查看结果')
+    loadPlatforms()
   } catch (e) {
     ElMessage.error('检查启动失败: ' + (e.response?.data?.detail || e.message))
   } finally {
@@ -717,6 +770,12 @@ function formatDate(d) {
   return new Date(d).toLocaleDateString('zh-CN')
 }
 
+function isDataStale(lastChecked) {
+  if (!lastChecked) return true
+  const days = (Date.now() - new Date(lastChecked).getTime()) / 86400000
+  return days > 30
+}
+
 // ── 关键词库 ──
 const sandtableTypes = ref([])
 const kwSandtableType = ref('')
@@ -759,11 +818,19 @@ function weightLabel(w) {
   return '长尾'
 }
 
+function resetKwForm() {
+  editingKw.value = null
+  kwForm.value = { word: '', category: 'scene', weight: 'core', status: 'pending' }
+}
+
 async function loadKWTypes() {
   try {
     const res = await listSandtableTypes()
     sandtableTypes.value = res.data.types || []
-  } catch (e) { ElMessage.error('沙盘类型加载失败') }
+  } catch (e) {
+    ElMessage.error('沙盘类型加载失败: ' + (e.response?.data?.detail || e.message))
+    sandtableTypes.value = SANDTABLE_TYPES.map(t => ({ key: t.value, label: t.label }))
+  }
 }
 
 async function loadKeywords() {
@@ -771,7 +838,7 @@ async function loadKeywords() {
   try {
     const res = await getKeywords(kwSandtableType.value)
     kwData.value = res.data.keywords || {}
-  } catch (e) { ElMessage.error('关键词加载失败') }
+  } catch (e) { ElMessage.error('关键词加载失败: ' + (e.response?.data?.detail || e.message)) }
 }
 
 async function saveKeyword() {
@@ -922,6 +989,39 @@ async function exportKeywordsCSVAction() {
 // ── 竞品调研 ──
 const competitors = ref([])
 const selectedComps = ref([])
+// ── 竞品自动监控 ──
+const monitorRunning = ref(false)
+const monitorSuccess = ref('')
+const monitorError = ref('')
+const monitorHistory = ref([])
+
+async function triggerMonitor() {
+  monitorRunning.value = true
+  monitorSuccess.value = ''
+  monitorError.value = ''
+  try {
+    const { data } = await triggerCompetitorMonitor()
+    if (data.status === 'ok') {
+      monitorSuccess.value = `监控完成：${data.competitors_probed}个竞品 × ${data.platforms_probed}个平台，发现 ${data.changes_from_previous?.alerts?.length || 0} 项变化`
+    } else {
+      monitorError.value = `监控跳过：${data.message || data.reason}`
+    }
+    await loadMonitorHistory()
+  } catch (e) {
+    monitorError.value = '监控失败: ' + (e.response?.data?.detail || e.message)
+  } finally {
+    monitorRunning.value = false
+  }
+}
+
+async function loadMonitorHistory() {
+  try {
+    const { data } = await getCompetitorMonitorHistory(14)
+    monitorHistory.value = data.cycles || []
+  } catch {
+    monitorHistory.value = []
+  }
+}
 const compDialogVisible = ref(false)
 const editingComp = ref(null)
 const compSaving = ref(false)
@@ -1057,7 +1157,7 @@ async function saveSnapshot() {
     ElMessage.success('快照已保存')
     snapshotVisible.value = false
     loadCompetitors()
-  } catch (e) { ElMessage.error('保存失败') }
+  } catch (e) { ElMessage.error('保存失败: ' + (e.response?.data?.detail || e.message)) }
   finally { snapSaving.value = false }
 }
 
@@ -1085,7 +1185,7 @@ async function loadCompetitors() {
   try {
     const res = await listCompetitors()
     competitors.value = res.data.competitors || []
-  } catch (e) { ElMessage.error('竞品列表加载失败') }
+  } catch (e) { ElMessage.error('竞品列表加载失败: ' + (e.response?.data?.detail || e.message)) }
 }
 
 onMounted(() => {

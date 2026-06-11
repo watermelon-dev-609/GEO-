@@ -88,10 +88,36 @@
               </div>
             </el-form-item>
 
-            <!-- 自定义问题 -->
+            <!-- 自定义问题 + LLM生成 -->
             <el-form-item label="自定义问题（可选，一行一个）">
-              <el-input v-model="customQuestions" type="textarea" :rows="3" placeholder="自定义评测问题..." />
+              <el-input v-model="customQuestions" type="textarea" :rows="3" placeholder="手动输入评测问题，或点击下方按钮自动生成..." />
+              <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+                <el-button size="small" type="primary" @click="handleGenerateQuestions" :loading="generatingQuestions" :disabled="!evalText">
+                  {{ generatingQuestions ? 'LLM生成中...' : '🤖 LLM生成评测问题' }}
+                </el-button>
+                <span v-if="generatedQuestions.length > 0" style="font-size:12px;color:#9B9EAA;">
+                  已生成 {{ generatedQuestions.length }} 个问题，选中 {{ selectedGeneratedQs.length }} 个
+                </span>
+              </div>
             </el-form-item>
+
+            <!-- 生成的问题列表 -->
+            <div v-if="generatedQuestions.length > 0 && expandedQuestions" class="generated-qs-panel">
+              <div class="generated-qs-header">
+                <span>生成的问题（勾选以加入评测）</span>
+                <el-button size="small" link @click="selectAllGenerated">
+                  {{ selectedGeneratedQs.length === generatedQuestions.length ? '取消全选' : '全选' }}
+                </el-button>
+              </div>
+              <div class="generated-qs-list">
+                <div v-for="(q, i) in generatedQuestions" :key="i" class="generated-q-item"
+                  :class="{ selected: selectedGeneratedQs.includes(q) }"
+                  @click="toggleGeneratedQuestion(q)">
+                  <el-checkbox :model-value="selectedGeneratedQs.includes(q)" @click.stop @change="toggleGeneratedQuestion(q)" />
+                  <span class="generated-q-text">{{ q }}</span>
+                </div>
+              </div>
+            </div>
           </el-form>
 
           <!-- 操作按钮 -->
@@ -271,7 +297,16 @@
           </div>
 
           <!-- 操作 -->
-          <div style="text-align: right; margin-top: 16px">
+          <div style="text-align: right; margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;">
+            <el-button
+              v-if="weakPoints.length > 0 || suggestions.length > 0"
+              type="warning"
+              size="large"
+              :loading="autoReoptRunning"
+              @click="autoReoptimizeAndEval"
+            >
+              {{ autoReoptRunning ? autoReoptProgress : '一键重优化并评测' }}
+            </el-button>
             <el-button type="primary" @click="resetEval">重新评测</el-button>
             <el-button type="warning" @click="goToOptimize">返回GEO工坊优化</el-button>
             <el-button type="success" @click="goToExport">导出报告</el-button>
@@ -307,6 +342,10 @@
             </div>
             <div class="history-item-score" :style="{ color: scoreColor(item.overall_score) }">
               {{ item.overall_score ?? '-' }}分
+              <div v-if="historyTrends[item.sandtable_type]" class="history-trend">
+                <span class="trend-arrow">{{ historyTrends[item.sandtable_type].trend === 'up' ? '↑' : historyTrends[item.sandtable_type].trend === 'down' ? '↓' : '→' }}</span>
+                <span class="trend-scores">{{ historyTrends[item.sandtable_type].scores.join(' → ') }}</span>
+              </div>
             </div>
             <el-button
               size="small"
@@ -387,9 +426,10 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
-import { getEvalDimensions, startEvalSSE, cancelEval as apiCancelEval, getEvalHistory, getEvalHistoryDetail, deleteEvalHistory, compareEvalHistory } from '../api'
+import { getEvalDimensions, startEvalSSE, cancelEval as apiCancelEval, getEvalHistory, getEvalHistoryDetail, deleteEvalHistory, compareEvalHistory, generateEvalQuestions, rewriteText } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Clock, Delete } from '@element-plus/icons-vue'
+import { SANDTABLE_TYPES, AI_PLATFORMS, scoreColor } from '../constants'
 
 const router = useRouter()
 const store = useGeoStore()
@@ -402,6 +442,10 @@ const sandtableType = ref(store.currentSandtableType || 'smart_traffic')
 const targetPlatforms = ref(store.selectedPlatforms.length > 0 ? store.selectedPlatforms : ['deepseek'])
 const userRoles = ref(['b_end_procurement', 'general_consultant'])
 const customQuestions = ref('')
+const generatedQuestions = ref([])
+const generatingQuestions = ref(false)
+const expandedQuestions = ref(false)
+const selectedGeneratedQs = ref([])
 
 const dimensionConfigs = ref([])
 const hasLLM = computed(() => store.configuredPlatforms.length > 0)
@@ -421,6 +465,11 @@ const historyDrawerVisible = ref(false)
 const historyItems = ref([])
 const selectedForCompare = ref([])
 const compareDialogVisible = ref(false)
+
+// ── 一键重优化并评测 ──
+const autoReoptRunning = ref(false)
+const autoReoptProgress = ref('')
+const lastScore = ref(null)  // 优化前的分数
 const compareLoading = ref(false)
 const compareData = ref(null)
 
@@ -482,25 +531,8 @@ const statusLabel = computed(() => {
 })
 
 // ── 沙盘类型 / 平台 / 角色选项 ──
-const sandtableTypes = [
-  { value: 'smart_traffic', label: '智慧交通沙盘' },
-  { value: 'smart_city', label: '智慧城市沙盘' },
-  { value: 'smart_industry', label: '智慧工业沙盘' },
-  { value: 'smart_agriculture', label: '智慧农业沙盘' },
-  { value: 'smart_logistics', label: '智慧物流沙盘' },
-  { value: 'military_terrain', label: '军事地形沙盘' },
-  { value: 'digital_multimedia', label: '数字多媒体沙盘' },
-  { value: 'real_estate', label: '地产/规划/展厅沙盘' },
-]
-const availablePlatforms = [
-  { value: 'wenxin', label: '文心一言' },
-  { value: 'tongyi', label: '通义千问' },
-  { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'doubao', label: '字节豆包' },
-  { value: 'yuanbao', label: '腾讯元宝' },
-  { value: 'kimi', label: 'Kimi' },
-  { value: 'xinghuo', label: '讯飞星火' },
-]
+const sandtableTypes = SANDTABLE_TYPES
+const availablePlatforms = AI_PLATFORMS
 const roleOptions = [
   { value: 'b_end_procurement', label: 'B端政企采购' },
   { value: 'technical_selection', label: '技术人员选型' },
@@ -517,7 +549,15 @@ onMounted(async () => {
       ...d,
       enabled: !(d.requires_llm && !hasLLM.value),
     }))
-  } catch (e) { console.error('Dimension config load failed:', e) }
+  } catch (e) {
+    ElMessage.error('加载评测维度配置失败: ' + (e.response?.data?.detail || e.message))
+    dimensionConfigs.value = [
+      { key: 'brand_recall', label: '品牌召回率', requires_llm: false, enabled: true, weight: 25 },
+      { key: 'solution_match', label: '方案匹配度', requires_llm: false, enabled: true, weight: 25 },
+      { key: 'structure_quality', label: '结构化程度', requires_llm: false, enabled: true, weight: 25 },
+      { key: 'source_consistency', label: '信源一致性', requires_llm: false, enabled: true, weight: 25 },
+    ]
+  }
 
   const firstResult = store.rewriteResults[0]
   evalText.value = firstResult?.optimized_text || store.cleanedText || ''
@@ -530,6 +570,61 @@ onUnmounted(() => {
     sseConnection.value = null
   }
 })
+
+// ── LLM 生成评测问题 ──
+async function handleGenerateQuestions() {
+  if (!evalText.value || evalText.value.length < 50) {
+    ElMessage.warning('请先输入或选择评测文本（至少50字）')
+    return
+  }
+  generatingQuestions.value = true
+  generatedQuestions.value = []
+  selectedGeneratedQs.value = []
+  try {
+    const res = await generateEvalQuestions({
+      optimized_text: evalText.value,
+      sandtable_type: sandtableType.value,
+      enterprise_name: store.enterpriseName || '',
+      count: 10,
+    })
+    generatedQuestions.value = res.data.questions || []
+    expandedQuestions.value = true
+    if (generatedQuestions.value.length > 0) {
+      ElMessage.success(`LLM生成了 ${generatedQuestions.value.length} 个评测问题`)
+    } else {
+      ElMessage.warning('未能生成问题，请检查文案内容')
+    }
+  } catch (e) {
+    ElMessage.error('问题生成失败: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    generatingQuestions.value = false
+  }
+}
+
+function toggleGeneratedQuestion(q) {
+  const idx = selectedGeneratedQs.value.indexOf(q)
+  if (idx >= 0) {
+    selectedGeneratedQs.value.splice(idx, 1)
+  } else {
+    selectedGeneratedQs.value.push(q)
+  }
+  // 将选中问题同步到自定义问题文本区
+  syncCustomQuestions()
+}
+
+function selectAllGenerated() {
+  if (selectedGeneratedQs.value.length === generatedQuestions.value.length) {
+    selectedGeneratedQs.value = []
+  } else {
+    selectedGeneratedQs.value = [...generatedQuestions.value]
+  }
+  syncCustomQuestions()
+}
+
+function syncCustomQuestions() {
+  const manual = customQuestions.value.split('\n').map(s => s.trim()).filter(s => s && !generatedQuestions.value.includes(s))
+  customQuestions.value = [...selectedGeneratedQs.value, ...manual].join('\n')
+}
 
 // ── 文本来源切换 ──
 function onTextSourceChange(val) {
@@ -544,13 +639,15 @@ function onTextSourceChange(val) {
 
 // ── 维度配置变化 ──
 function onDimensionChange() {
-  // 当用户勾选/取消勾选维度时，重新均分权重（这是一次性操作，之后用户可自由调整）
   const enabled = dimensionConfigs.value.filter(d => d.enabled)
   if (enabled.length === 0) return
+  // 仅当所有权重为 0（首次激活）时自动均分；否则保留用户已调权重
+  const allZero = enabled.every(d => d.weight === 0)
+  if (!allZero) return
   const each = Math.floor(100 / enabled.length)
   const remainder = 100 - each * enabled.length
   enabled.forEach((d, i) => {
-    d.weight = each + (i === enabled.length - 1 ? remainder : 0)
+    d.weight = each + (i < remainder ? 1 : 0)
   })
 }
 function onWeightChange(changedDim) {
@@ -693,7 +790,7 @@ async function cancelEval() {
   if (evalSessionId.value) {
     try {
       await apiCancelEval(evalSessionId.value)
-    } catch (e) { console.error('cancelEval API failed:', e) }
+    } catch (e) { /* 取消失败不影响前端状态 */ }
   }
   sseConnection.value?.close()
   evalStatus.value = 'cancelled'
@@ -702,17 +799,19 @@ async function cancelEval() {
 }
 
 // ── 工具函数 ──
-function scoreColor(score) {
-  if (score >= 80) return '#5B8C5A'
-  if (score >= 60) return '#D4956A'
-  return '#C5554A'
-}
 function resetEval() {
+  if (sseConnection.value) {
+    sseConnection.value.close()
+    sseConnection.value = null
+  }
   evalStatus.value = 'idle'
   evalOverallProgress.value = 0
   evalOverallScore.value = null
   evalSessionId.value = null
   phaseStates.value = {}
+  generatedQuestions.value = []
+  selectedGeneratedQs.value = []
+  expandedQuestions.value = false
 }
 // ── 历史抽屉 ──
 async function openHistory() {
@@ -730,7 +829,31 @@ async function loadHistory() {
       _loading: false,
       _detail: null,
     }))
-  } catch (e) { console.error('loadHistory failed:', e) }
+    // 计算同类沙盘的趋势
+    computeTrends()
+  } catch (e) { ElMessage.error('加载评测历史失败: ' + (e.response?.data?.detail || e.message)) }
+}
+
+const historyTrends = ref({})  // { sandtable_type: { scores: [83,78,72], trend: 'up'|'down'|'stable' } }
+
+function computeTrends() {
+  const map = {}
+  for (const item of historyItems.value) {
+    const key = item.sandtable_type || 'unknown'
+    if (!map[key]) map[key] = []
+    if (item.overall_score !== null) map[key].push(item.overall_score)
+  }
+  const trends = {}
+  for (const [key, scores] of Object.entries(map)) {
+    if (scores.length >= 2) {
+      const latest = scores[0], previous = scores[1]
+      trends[key] = {
+        scores: scores.slice(0, 5).reverse(),
+        trend: latest > previous ? 'up' : latest < previous ? 'down' : 'stable',
+      }
+    }
+  }
+  historyTrends.value = trends
 }
 
 function toggleHistoryDetail(item) {
@@ -746,7 +869,7 @@ async function loadHistoryDetail(item) {
     const res = await getEvalHistoryDetail(item.session_id)
     item._detail = res.data
     item._loading = false
-  } catch (e) { console.error('loadHistoryDetail failed:', e); item._loading = false }
+  } catch (e) { ElMessage.error('加载评测详情失败: ' + (e.response?.data?.detail || e.message)); item._loading = false }
 }
 
 function getDetailDimensions(detail) {
@@ -781,7 +904,7 @@ async function doCompare() {
       session_ids: [selectedForCompare.value[0].session_id, selectedForCompare.value[1].session_id],
     })
     compareData.value = res.data
-  } catch (e) { console.error('doCompare failed:', e) } finally {
+  } catch (e) { ElMessage.error('评测对比失败: ' + (e.response?.data?.detail || e.message)) } finally {
     compareLoading.value = false
   }
 }
@@ -809,6 +932,71 @@ function formatDate(dateStr) {
   const d = new Date(dateStr)
   const pad = n => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// ── 一键重优化并评测 ──
+async function autoReoptimizeAndEval() {
+  if (autoReoptRunning.value) return
+  autoReoptRunning.value = true
+  lastScore.value = evalOverallScore.value
+
+  try {
+    // Step 1: 重优化
+    autoReoptProgress.value = '正在重优化...'
+    const rewriteRes = await rewriteText({
+      cleaned_text: evalText.value,
+      sandtable_type: sandtableType.value,
+      platforms: targetPlatforms.value,
+      optimization_hints: suggestions.value,
+    })
+    const newText = rewriteRes.data?.results?.[0]?.optimized_text
+    if (!newText) { ElMessage.error('重优化失败，未返回结果'); return }
+
+    // Step 2: 重新评测
+    autoReoptProgress.value = '优化完成，开始评测...'
+    evalText.value = newText
+
+    // 使用SSE评测
+    await new Promise((resolve, reject) => {
+      const conn = startEvalSSE({
+        optimized_text: newText,
+        sandtable_type: sandtableType.value,
+        platforms: targetPlatforms.value,
+        user_roles: userRoles.value,
+        custom_questions: customQuestions.value ? customQuestions.value.split('\n').filter(Boolean) : [],
+        dimensions: dimensionConfigs.value,
+      },
+      (eventType, payload) => {
+        if (eventType === 'progress') {
+          autoReoptProgress.value = `评测中 ${Math.round(payload.progress || 0)}%`
+        } else if (eventType === 'complete' || eventType === 'result') {
+          resolve(payload)
+        }
+      },
+      (err) => { ElMessage.error('评测失败: ' + err.message); reject(err) }
+      )
+      sseConnection.value = conn
+    })
+
+    // Step 3: 等待并刷新
+    await new Promise(r => setTimeout(r, 1000))
+    autoReoptProgress.value = '完成'
+
+    const newScore = evalOverallScore.value
+    if (lastScore.value !== null && newScore !== null) {
+      const diff = (newScore - lastScore.value).toFixed(1)
+      const arrow = diff > 0 ? '↑' : diff < 0 ? '↓' : '→'
+      ElMessage.success(`重优化完成: ${lastScore.value} ${arrow} ${newScore} (${diff > 0 ? '+' : ''}${diff})`)
+    } else {
+      ElMessage.success('重优化并评测完成')
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      ElMessage.error('重优化失败: ' + (e.response?.data?.detail || e.message))
+    }
+  } finally {
+    autoReoptRunning.value = false
+  }
 }
 
 // ── 重优化 ──
@@ -892,8 +1080,34 @@ function goToExport() {
 .history-item-date { font-size: 13px; color: #2D3142; }
 .history-item-meta { display: flex; gap: 4px; margin-top: 4px; }
 .history-item-score { font-size: 20px; font-weight: bold; min-width: 60px; text-align: right; }
+.history-trend { font-size: 11px; font-weight: normal; color: #9B9EAA; margin-top: 2px; }
+.trend-arrow { font-size: 14px; margin-right: 2px; }
+.trend-scores { white-space: nowrap; }
 .history-item-detail { padding: 12px 0 4px 32px; }
 .history-dim-row { display: flex; align-items: center; margin: 6px 0; font-size: 13px; }
 .compare-score { font-size: 36px; font-weight: bold; text-align: center; padding: 8px 0; color: #C8963E; }
 .compare-dim { display: flex; justify-content: space-between; font-size: 13px; margin: 4px 0; padding: 2px 8px; }
+
+/* ── LLM Generated Questions Panel ── */
+.generated-qs-panel {
+  background: rgba(200,150,62,0.04);
+  border: 1px solid rgba(200,150,62,0.15);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+.generated-qs-header {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 13px; font-weight: 600; color: #6B6E7B; margin-bottom: 8px;
+}
+.generated-qs-list { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; }
+.generated-q-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 8px; border-radius: 6px; cursor: pointer;
+  transition: background 0.15s cubic-bezier(0.4,0,0.2,1);
+}
+.generated-q-item:hover { background: rgba(200,150,62,0.06); }
+.generated-q-item.selected { background: rgba(91,140,90,0.06); }
+.generated-q-text { font-size: 13px; color: #2D3142; line-height: 1.6; flex: 1; }
 </style>

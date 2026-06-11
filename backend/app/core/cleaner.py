@@ -11,10 +11,11 @@ from app.prompts.cleaning import (
     CLEANING_SYSTEM_PROMPT, CLEANING_USER_TEMPLATE,
     EXTRACTION_SYSTEM_PROMPT, EXTRACTION_USER_TEMPLATE,
     TYPE_DETECTION_PROMPT, TYPE_DETECTION_USER,
+    build_cleaning_system_prompt,
 )
 from app.utils.retry import async_retry
 from app.utils.cache import geo_cache
-from app.utils.config import get_enterprise_name, get_enterprise_location
+from app.utils.config import get_enterprise_name, get_enterprise_location, load_settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,15 @@ class TextCleaner:
         self,
         content: str,
         sandtable_type: SandtableType | None = None,
+        rules_config: dict | None = None,
     ) -> dict:
-        """清洗文本并返回结果（带缓存）"""
+        """清洗文本并返回结果（带缓存）
+
+        Args:
+            content: 待清洗文本
+            sandtable_type: 沙盘业务类型（可选）
+            rules_config: 清洗规则配置（可选，不传则从 settings.yaml 读取）
+        """
         start = time.perf_counter()
 
         input_error = self._validate_input(content)
@@ -43,8 +51,20 @@ class TextCleaner:
                 "processing_time_ms": 0,
             }
 
+        # 读取规则配置（优先使用传入的，否则从 settings 加载）
+        if rules_config is None:
+            settings = load_settings()
+            rules_config = settings.get("cleaning", {}).get("rules", {})
+
+        # 构建动态 system prompt
+        system_prompt = build_cleaning_system_prompt(rules_config)
+
+        # 缓存键包含规则 hash，规则变更后自动失效
+        rules_hash = hashlib.md5(
+            json.dumps(rules_config, sort_keys=True, ensure_ascii=False).encode()
+        ).hexdigest()[:8]
         st_key = sandtable_type.value if sandtable_type else "auto"
-        cache_key = f"clean:{st_key}:{hashlib.md5(content.encode()).hexdigest()}"
+        cache_key = f"clean:{st_key}:{rules_hash}:{hashlib.md5(content.encode()).hexdigest()}"
         cached = geo_cache.get(cache_key)
         if cached:
             return cached
@@ -53,7 +73,7 @@ class TextCleaner:
 
         sandtable_label = sandtable_type.label if sandtable_type else "待自动识别"
         messages = [
-            LLMMessage(role="system", content=CLEANING_SYSTEM_PROMPT),
+            LLMMessage(role="system", content=system_prompt),
             LLMMessage(role="user", content=CLEANING_USER_TEMPLATE.format(
                 content=pre_cleaned,
                 sandtable_type=sandtable_label,
@@ -167,6 +187,7 @@ class TextCleaner:
 
     def _parse_extraction_json(self, raw: str) -> dict:
         """解析LLM返回的五维信息JSON"""
+        from app.core.dimensions_shared import empty_dimensions_with_extras
         try:
             json_match = raw
             if "```json" in raw:
@@ -174,22 +195,13 @@ class TextCleaner:
             elif "```" in raw:
                 json_match = raw.split("```")[1].split("```")[0]
             data = json.loads(json_match.strip())
-            return {
-                "core_advantages": data.get("core_advantages", []),
-                "applicable_scenarios": data.get("applicable_scenarios", []),
-                "technical_features": data.get("technical_features", []),
-                "service_capabilities": data.get("service_capabilities", []),
-                "implementation_value": data.get("implementation_value", []),
-                "key_phrases": data.get("key_phrases", []),
-            }
+            result = empty_dimensions_with_extras()
+            for key in result:
+                if key in data:
+                    result[key] = data[key]
+            return result
         except (json.JSONDecodeError, IndexError, KeyError):
             logger.warning("五维信息JSON解析失败，使用原始返回")
-            return {
-                "core_advantages": [],
-                "applicable_scenarios": [],
-                "technical_features": [],
-                "service_capabilities": [],
-                "implementation_value": [],
-                "key_phrases": [],
-                "_raw": raw,
-            }
+            result = empty_dimensions_with_extras()
+            result["_raw"] = raw
+            return result

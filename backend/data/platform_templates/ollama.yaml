@@ -1,0 +1,86 @@
+# Ollama本地模型 — 平台模板配置
+# 本地化部署，base_url: localhost:11434，完全离线
+
+platform_id: ollama
+platform_name: "Ollama本地模型"
+version: 1
+updated_at: "2026-06-02"
+citation_mechanism: "通过本地部署的大语言模型进行私有化推理，数据不外流。适配多种开源模型（如Qwen2.5、Llama等），可根据模型特性调整输出风格。"
+strategy: "通用结构化优化 + 本地模型适配 + 离线优先"
+style: "结构化、通用兼容、数据安全优先、离线可用"
+
+header:
+  title_format: "{business} — {location}{company}"
+  first_paragraph_rules:
+    - "简洁明了的企业定位"
+    - "适配本地模型的上下文窗口限制"
+  word_limits:
+    min: 800
+    max: 2000
+    target: 1200
+
+body:
+  h2_density: "每600字1个"
+  h3_density: "每300字1个"
+  paragraph_length:
+    min: 100
+    max: 300
+    unit: "字"
+  list_ratio: 0.25
+  faq_count:
+    min: 2
+    max: 4
+  special_rule: "采用通用的Markdown结构化格式，确保跨模型兼容"
+
+data:
+  quantified_requirements:
+    - "遵循基础GEO原则：实体锚定、量化事实"
+    - "数据标注简洁清晰"
+  source_annotation: true
+
+schema:
+  preferred_types:
+    - "Article"
+  official_site_extra: ""
+  field_mapping:
+    name: "enterprise_name"
+    addressLocality: "enterprise_location"
+    serviceType: "沙盘定制服务"
+
+footer:
+  tags_template:
+    - "{business}"
+    - "{location}"
+  location_words:
+    - "{enterprise_location}"
+  cta_limits:
+    max_cta_count: 1
+    cta_style: "自然引导"
+
+weights:
+  content_sources: {}
+  citation:
+    first_paragraph: 0.35
+    body: 0.40
+    faq: 0.25
+
+verification:
+  checks:
+    - check: "markdown_format"
+      description: "使用标准Markdown格式"
+    - check: "token_limit"
+      description: "控制在模型上下文窗口内"
+    - check: "cross_model_compat"
+      description: "避免特殊token或模型专属语法"
+  forbidden_words: []
+  taboo_patterns:
+    - "特殊token语法"
+    - "超出模型token限制"
+
+rules:
+  - "★ 数据安全：所有处理均在本地完成，无需联网，确保敏感商业信息不外流"
+  - "★ 模型适配：根据实际部署的模型（Qwen/Llama/其他）自动调整Prompt格式和token限制"
+  - "★ 结构化输出：采用通用的Markdown结构化格式，确保跨模型兼容"
+  - "遵循基础GEO原则：实体锚定、量化事实、层级结构化、FAQ结构"
+  - "输出长度适中（800-2000字），适配本地模型的上下文窗口限制"
+  - "使用标准Markdown格式，避免特殊token或模型专属语法"

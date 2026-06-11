@@ -1,6 +1,7 @@
 """配置加载工具 — 带内存缓存，避免每次请求重复 I/O"""
 
 import os
+import tempfile
 import time
 import yaml
 import threading
@@ -104,6 +105,20 @@ def invalidate_config_cache():
         _api_keys_cache_ts = 0
 
 
+def save_settings(data: dict[str, Any]) -> None:
+    """原子写入主配置文件（tempfile + os.replace 防并发损坏）"""
+    settings_path = CONFIG_DIR / "settings.yaml"
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", suffix=".yaml",
+        dir=CONFIG_DIR, delete=False,
+    ) as tmp:
+        yaml.dump(data, tmp, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+    os.replace(tmp.name, str(settings_path))
+    invalidate_config_cache()
+
+
 def get_data_dir() -> Path:
     """获取数据目录绝对路径"""
     settings = load_settings()
@@ -125,3 +140,23 @@ def get_enterprise_location() -> str:
     """从配置读取企业所在地"""
     settings = load_settings()
     return settings.get("system", {}).get("enterprise_location", "武汉")
+
+
+def get_enterprise_website() -> str:
+    """从配置读取企业官网URL"""
+    settings = load_settings()
+    return settings.get("system", {}).get("enterprise_website", "")
+
+
+def get_brand_variants() -> list[str]:
+    """从配置读取品牌名变体列表（用于品牌收录检测）"""
+    settings = load_settings()
+    variants = settings.get("brand_monitor", {}).get("brand_variants", [])
+    if not variants:
+        name = get_enterprise_name()
+        loc = get_enterprise_location()
+        variants = [name]
+        if loc and loc not in name:
+            variants.append(f"{loc}{name}")
+        variants.append(name.replace("有限公司", "").replace("责任公司", ""))
+    return variants

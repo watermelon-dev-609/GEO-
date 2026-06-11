@@ -1,95 +1,310 @@
-# GEO优化系统 - 主配置文件
-# 个人单机版配置
-
 system:
-  version: "1.0.0-personal"
-  enterprise_name: "武汉微艺达智能科技有限公司"
-  enterprise_location: "武汉"
-  data_dir: "./data"
-  templates_dir: "./templates"
-
-# 日志配置
+  version: 2.0.0-personal
+  enterprise_name: 武汉微艺达智能科技有限公司
+  enterprise_location: 武汉
+  enterprise_website: http://www.weiyida.co
+  data_dir: ./data
+  templates_dir: ./templates
+  platform_templates_dir: ./data/platform_templates
+  template_cache_ttl: 60
 logging:
-  level: "INFO"                           # DEBUG / INFO / WARNING / ERROR
-  format: "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
-  datefmt: "%Y-%m-%d %H:%M:%S"
-  file: "./data/logs/app.log"             # 留空则仅输出到控制台
-
-# LLM平台配置
+  level: INFO
+  format: '%(asctime)s [%(levelname)s] %(name)s - %(message)s'
+  datefmt: '%Y-%m-%d %H:%M:%S'
+  file: ./data/logs/app.log
 llm:
-  default_model: "deepseek"  # 默认使用的AI平台
-  request_timeout: 120        # 请求超时（秒）
-  max_retries: 3              # 最大重试次数
-  retry_delay: 2              # 重试间隔（秒）
-
+  default_model: deepseek
+  request_timeout: 120
+  max_retries: 3
+  retry_delay: 2
   platforms:
     kimi:
-      enabled: false
-      model_name: "moonshot-v1-8k"
-      base_url: "https://api.moonshot.cn/v1"
-
+      enabled: true
+      model_name: moonshot-v1-128k
+      base_url: https://api.moonshot.cn/v1
+      description: Kimi（月之暗面·128K深度长文AI）
     xinghuo:
       enabled: false
-      model_name: "spark-lite"
-      base_url: "https://spark-api-open.xf-yun.com/v1"
-
+      model_name: spark-lite
+      base_url: https://spark-api-open.xf-yun.com/v1
+      description: 讯飞星火（多模态理解·垂直领域知识优先）
     wenxin:
       enabled: false
-      model_name: "ernie-4.0-turbo"
-      base_url: "https://aip.baidubce.com"
-      description: "文心一言（国内搜索流量核心·卡片收录优先）"
-
+      model_name: ernie-4.0-turbo
+      base_url: https://aip.baidubce.com
+      description: 文心一言（国内搜索流量核心·卡片收录优先）
     tongyi:
       enabled: false
-      model_name: "qwen-max"
-      base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-      description: "通义千问（阿里系·B端政企采购优选）"
-
+      model_name: qwen-max
+      base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      description: 通义千问（阿里系·B端政企采购优选）
     deepseek:
       enabled: false
-      model_name: "deepseek-chat"
-      base_url: "https://api.deepseek.com/v1"
-      description: "DeepSeek（专业技术AI·工程选型优先）"
-
+      model_name: deepseek-chat
+      base_url: https://api.deepseek.com/v1
+      description: DeepSeek（专业技术AI·工程选型优先）
     doubao:
-      enabled: false
-      model_name: "doubao-pro"
-      base_url: "https://ark.cn-beijing.volces.com/api/v3"
-      description: "字节豆包（短视频&大众AI·通俗获客优先）"
-
+      enabled: true
+      model_name: doubao-1-5-pro-32k-250115
+      base_url: https://ark.cn-beijing.volces.com/api/v3
+      description: 字节豆包（短视频&大众AI·通俗获客优先）
     yuanbao:
       enabled: false
-      model_name: "hunyuan-pro"
-      base_url: "https://api.hunyuan.cloud.tencent.com/v1"
-      description: "腾讯元宝（政企办公AI·供应商筛选优先）"
-
-# Embedding配置
+      model_name: hunyuan-pro
+      base_url: https://api.hunyuan.cloud.tencent.com/v1
+      description: 腾讯元宝（政企办公AI·供应商筛选优先）
+    claude:
+      enabled: false
+      model_name: claude-sonnet-4-6
+      base_url: https://api.anthropic.com
+      description: Anthropic Claude（长上下文理解·复杂推理采信优先）
+    openai:
+      enabled: false
+      model_name: gpt-4o
+      base_url: https://api.openai.com/v1
+      description: OpenAI GPT（通用AI·隐性结构化采信优先）
 embedding:
-  model_name: "BAAI/bge-large-zh-v1.5"
-  device: "cpu"               # cpu / cuda
+  model_name: BAAI/bge-large-zh-v1.5
+  device: cpu
   dimension: 1024
   batch_size: 8
-  cache_dir: "./data/cache/models"
-  hf_endpoint: "https://hf-mirror.com"  # HuggingFace镜像（国内访问加速）
-
-# 文本处理配置
+  cache_dir: ./data/cache/models
+  hf_endpoint: https://hf-mirror.com
 text_processing:
-  max_chunk_size: 2000        # 最大切片字符数
-  chunk_overlap: 200          # 切片重叠字符数
-  min_cleaned_length: 50      # 清洗后最小长度
-
-# 评测配置
+  max_chunk_size: 2000
+  chunk_overlap: 200
+  min_cleaned_length: 50
 evaluation:
-  questions_per_role: 10      # 每角色默认问题数
-  similarity_threshold: 0.65  # 语义匹配阈值
-  top_k_results: 5            # 检索返回数
-
-# 报表配置
+  questions_per_role: 10
+  similarity_threshold: 0.65
+  top_k_results: 5
+  temperature:
+    advantage_citation: 0.3
+    structure_quality: 0.3
+    differentiation: 0.3
+    eeat: 0.3
+    real_citation: 0.5
+    source_consistency: 0.2
+brand_monitor:
+  brand_variants:
+  - 武汉微艺达智能科技有限公司
+  - 微艺达
+  - 微艺达智能科技
+  - 武汉微艺达
+  default_categories:
+  - brand_direct
+  - scenario
+  max_queries_per_category: 3
+  llm_verify_threshold: 60
+  platform_check_delay: 2
+auth:
+  enabled: false
+  password_hash: ''
+  session_ttl: 7200
+usage_limits:
+  daily_calls: 1000
+  monthly_cost: 100.0
+  warn_threshold: 80
+  critical_threshold: 95
+local_llm:
+  provider: ollama
+  ollama:
+    base_url: http://localhost:11434
+    model_name: qwen2.5
+  lmstudio:
+    base_url: http://localhost:1234
+    model_name: ''
+  offline_mode: false
+storage:
+  local_only: false
 reporting:
   radar_dimensions:
-    - core_advantage          # 核心优势
-    - scene_adaptation        # 场景适配
-    - technical_depth         # 技术深度
-    - service_completeness    # 服务完整性
-    - credibility             # 落地可信度
-    - ai_friendliness         # AI友好度
+  - core_advantage
+  - scene_adaptation
+  - technical_depth
+  - service_completeness
+  - credibility
+  - ai_friendliness
+scheduler:
+  default_jobs:
+    brand_monitor:
+      trigger: interval
+      trigger_value: '1440'
+      enabled: true
+    platform_check:
+      trigger: interval
+      trigger_value: '360'
+      enabled: true
+    weekly_report:
+      trigger: cron
+      trigger_value: 0 9 * * 1
+      enabled: true
+    monthly_report:
+      trigger: cron
+      trigger_value: 0 9 1 * *
+      enabled: true
+    rss_daily_crawl:
+      trigger: interval
+      trigger_value: '1440'
+      enabled: true
+    citation_weekly_test:
+      trigger: cron
+      trigger_value: 0 9 * * 3
+      enabled: true
+    structure_weekly_report:
+      trigger: cron
+      trigger_value: 0 10 * * 1
+      enabled: true
+    competitor_monitor:
+      trigger: cron
+      trigger_value: 0 8 * * 0,4
+      enabled: false
+  auto_recovery: true
+  persistence_file: ./data/scheduler_jobs.json
+competitor_monitor:
+  enabled: true
+  cycle_days: 3
+  platforms_to_probe:
+  - wenxin
+  - tongyi
+  - deepseek
+  - doubao
+  - kimi
+  query_pool_size: 15
+  scrape_timeout: 30
+  change_detection:
+    hash_algorithm: md5
+    similarity_threshold: 0.85
+  alert_thresholds:
+    minor_change: 1
+    moderate_change: 3
+    major_change: 5
+  storage_dir: ./data/competitors/monitoring
+cleaning:
+  rules:
+    remove_redundancy:
+      enabled: true
+      label: 去除冗余
+      description: 删除重复内容、空话套话、无意义的修饰词
+    unify_terminology:
+      enabled: true
+      label: 术语统一
+      description: 将口语化表达规范为行业标准术语
+    standardize_format:
+      enabled: true
+      label: 格式标准化
+      description: 统一段落结构，确保逻辑清晰、层次分明
+    preserve_key_info:
+      enabled: true
+      label: 保留关键信息
+      description: 产品参数、技术指标、服务流程、案例数据完整保留
+    de_advertise:
+      enabled: true
+      label: 去广告化
+      description: 去除过度营销用语，保留客观描述
+optimization:
+  platforms:
+    deepseek:
+      rules:
+        rag_chunking:
+          enabled: true
+          label: RAG切片优化
+          description: 每200-300字一个自包含信息单元，可被RAG独立检索
+        faq_structure:
+          enabled: true
+          label: FAQ结构强化
+          description: 全文至少5组问答对，RAG对问答格式召回率最高
+        param_standardization:
+          enabled: true
+          label: 参数标准化
+          description: 技术参数用「参数名：数值（单位）」格式，数字是RAG最强信号
+        entity_density:
+          enabled: true
+          label: 品牌实体高频锚定
+          description: 企业全称每段首句出现，全文至少5次
+        data_fidelity:
+          enabled: true
+          label: 数据原词保留
+          description: 量化数据必须逐字保留，不替换为模糊表述
+    doubao:
+      rules:
+        short_sentences:
+          enabled: true
+          label: 短句硬约束
+          description: 每句话不超过30个汉字，超过必须用句号断开
+        benefit_first:
+          enabled: true
+          label: 利益前置
+          description: 每个要点的第一句就说出对客户的好处
+        simple_language:
+          enabled: true
+          label: 通俗表达
+          description: 规避复杂术语，降低理解成本，适合普通用户阅读
+        cta_ending:
+          enabled: true
+          label: 行动指引收尾
+          description: 结尾有明确的下一步行动指引（立即咨询/免费方案等）
+    wenxin:
+      rules:
+        title_format:
+          enabled: true
+          label: 标题硬格式
+          description: 「地域+业务词+厂家」三位一体标题，匹配百度实体识别
+        first_para_four_elements:
+          enabled: true
+          label: 首段四要素
+          description: 150字内完成「谁、在哪、做什么、服务谁」，匹配百度AI摘要
+        keyword_density:
+          enabled: true
+          label: 关键词密度优化
+          description: 核心关键词密度3-5%，地域词明确标注
+        credential_forward:
+          enabled: true
+          label: 资质背书前置
+          description: 资质与服务背书前置，案例具象化呈现
+    tongyi:
+      rules:
+        three_tier_structure:
+          enabled: true
+          label: 三层递进结构
+          description: 按「行业理解→方案匹配→落地保障」三层组织内容
+        solution_logic:
+          enabled: true
+          label: 方案逻辑闭环
+          description: 问题→方案→价值→案例，层层递进
+        b_end_orientation:
+          enabled: true
+          label: B端政企导向
+          description: 弱化产品介绍，强化行业痛点和解决方案价值
+        delivery_assurance:
+          enabled: true
+          label: 交付保障体系
+          description: 突出项目交付经验、行业适配度、长期服务承诺
+    kimi:
+      rules:
+        four_tier_argument:
+          enabled: true
+          label: 四层递进论证
+          description: 「背景→分析→结论→依据」四层递进，每层嵌入品牌名
+        high_info_density:
+          enabled: true
+          label: 高信息密度
+          description: 每个核心观点配2-3句支撑细节+1个量化数据
+        entity_primacy:
+          enabled: true
+          label: 实体原词优先
+          description: 品牌名、量化数据、技术术语以原词形式出现，不替换
+        long_form_depth:
+          enabled: true
+          label: 长文深度展开
+          description: 1500-2500字深度内容，充分发挥长上下文优势
+watchdog:
+  enabled: true
+  watch_dirs:
+  - ./data/platform_templates
+  watch_patterns:
+  - '*.yaml'
+  - '*.yml'
+  debounce_seconds: 2.0
+  on_change_invalidate_cache: true
+  on_change_trigger_adaptation: true

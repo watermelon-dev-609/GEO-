@@ -24,7 +24,7 @@ export const SANDTABLE_LABELS = {
   real_estate: '地产/规划/展厅',
 }
 
-/** 7大AI平台（完整标签） */
+/** 10大AI平台（完整标签） */
 export const AI_PLATFORMS = [
   { value: 'wenxin', label: '文心一言' },
   { value: 'tongyi', label: '通义千问' },
@@ -33,6 +33,9 @@ export const AI_PLATFORMS = [
   { value: 'yuanbao', label: '腾讯元宝' },
   { value: 'kimi', label: 'Kimi' },
   { value: 'xinghuo', label: '讯飞星火' },
+  { value: 'claude', label: 'Claude' },
+  { value: 'ollama', label: 'Ollama (本地)' },
+  { value: 'lmstudio', label: 'LM Studio (本地)' },
 ]
 
 /** 评测维度标签映射 */
@@ -68,3 +71,10 @@ export function scoreColor(score) {
   if (score >= 60) return '#D4956A'
   return '#C5554A'
 }
+
+/** 品牌收录监测 — 查询分类 */
+export const QUERY_CATEGORIES = [
+  { key: 'brand_direct', label: '品牌直问' },
+  { key: 'scenario', label: '场景问询' },
+  { key: 'product', label: '产品问询' },
+]

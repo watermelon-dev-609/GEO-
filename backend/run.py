@@ -62,7 +62,7 @@ def uvicorn_run():
 
 if __name__ == "__main__":
     print("=" * 56)
-    print("  GEO生成式搜索优化系统 v1.0.0-personal")
+    print("  GEO生成式搜索优化系统 v2.0.0-personal")
     print("  武汉微艺达智能科技有限公司")
     print("=" * 56 + "\n")
 

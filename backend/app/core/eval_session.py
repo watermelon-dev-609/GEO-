@@ -30,54 +30,54 @@ class EvalSession:
     def cancelled(self) -> bool:
         return self._cancelled
 
-    def cancel(self):
-        self._cancelled = True
+    async def cancel(self):
+        async with self._state_lock:
+            self._cancelled = True
         logger.info(f"Session {self.session_id}: cancel requested")
 
-    def start_phase(self, phase: EvalPhase):
-        self.phases[phase]["status"] = EvalPhaseStatus.RUNNING.value
-        self._update_progress()
+    async def start_phase(self, phase: EvalPhase):
+        async with self._state_lock:
+            self.phases[phase]["status"] = EvalPhaseStatus.RUNNING.value
+            self._update_progress()
 
-    def complete_phase(self, phase: EvalPhase, result: dict | None = None):
-        self.phases[phase]["status"] = EvalPhaseStatus.COMPLETED.value
-        if result is not None:
-            self.phase_results[phase] = result
-        self._update_progress()
+    async def complete_phase(self, phase: EvalPhase, result: dict | None = None):
+        async with self._state_lock:
+            self.phases[phase]["status"] = EvalPhaseStatus.COMPLETED.value
+            if result is not None:
+                self.phase_results[phase] = result
+            self._update_progress()
 
-    def skip_phase(self, phase: EvalPhase):
-        self.phases[phase]["status"] = EvalPhaseStatus.SKIPPED.value
-        self._update_progress()
+    async def skip_phase(self, phase: EvalPhase):
+        async with self._state_lock:
+            self.phases[phase]["status"] = EvalPhaseStatus.SKIPPED.value
+            self._update_progress()
 
-    def fail_phase(self, phase: EvalPhase, error: str):
-        self.phases[phase]["status"] = EvalPhaseStatus.FAILED.value
-        self.phases[phase]["error"] = error
-        self._update_progress()
+    async def fail_phase(self, phase: EvalPhase, error: str):
+        async with self._state_lock:
+            self.phases[phase]["status"] = EvalPhaseStatus.FAILED.value
+            self.phases[phase]["error"] = error
+            self._update_progress()
 
-    def mark_completed(self, overall_score: float):
-        self.status = "completed"
-        self.overall_score = overall_score
-        self.overall_progress = 100.0
-        self._save_to_disk()
+    async def mark_completed(self, overall_score: float):
+        async with self._state_lock:
+            self.status = "completed"
+            self.overall_score = overall_score
+            self.overall_progress = 100.0
+        await self._save_to_disk_async()
 
-    def _save_to_disk(self):
-        """持久化到磁盘"""
-        try:
-            from app.core.eval_history_store import save_session
-            save_session(self, self.evaluated_text, self.original_text)
-        except Exception as e:
-            logger.warning(f"评测历史保存失败: {e}")
+    async def mark_failed(self):
+        async with self._state_lock:
+            self.status = "failed"
 
-    def mark_failed(self):
-        self.status = "failed"
-
-    def mark_cancelled(self):
-        self._cancelled = True
-        self.status = "cancelled"
-        for phase in EvalPhase:
-            if self.phases[phase]["status"] == EvalPhaseStatus.PENDING.value:
-                self.phases[phase]["status"] = EvalPhaseStatus.CANCELLED.value
-        self.overall_progress = 100.0
-        self._save_to_disk()
+    async def mark_cancelled(self):
+        async with self._state_lock:
+            self._cancelled = True
+            self.status = "cancelled"
+            for phase in EvalPhase:
+                if self.phases[phase]["status"] == EvalPhaseStatus.PENDING.value:
+                    self.phases[phase]["status"] = EvalPhaseStatus.CANCELLED.value
+            self.overall_progress = 100.0
+        await self._save_to_disk_async()
 
     def _update_progress(self):
         total = len(EvalPhase)
@@ -90,6 +90,23 @@ class EvalSession:
             )
         )
         self.overall_progress = round((completed / total) * 100, 1)
+
+    def _save_to_disk(self):
+        """持久化到磁盘（同步，需在已持有锁时调用）"""
+        try:
+            from app.core.eval_history_store import save_session
+            save_session(self, self.evaluated_text, self.original_text)
+        except Exception as e:
+            logger.warning(f"评测历史保存失败: {e}")
+
+    async def _save_to_disk_async(self):
+        """持久化到磁盘（异步，释放锁后调用以免阻塞）"""
+        import asyncio as _asyncio
+        try:
+            from app.core.eval_history_store import save_session
+            await _asyncio.to_thread(save_session, self, self.evaluated_text, self.original_text)
+        except Exception as e:
+            logger.warning(f"评测历史保存失败: {e}")
 
     def to_dict(self) -> dict:
         return {
@@ -114,11 +131,20 @@ class EvalSession:
     @classmethod
     async def create(cls, sandtable_type: str = "", mode: str = "pipeline") -> "EvalSession":
         """创建会话并原子注册到全局存储"""
-        await cls._cleanup_stale()
         session = cls.__new__(cls)
         session.__init_args__(sandtable_type, mode)
         async with _sessions_lock:
             _sessions[session.session_id] = session
+            # 在锁内清理过期会话，避免与注册操作的竞态
+            now = _now_ts()
+            stale_ids = [
+                sid for sid, s in _sessions.items()
+                if (now - s._created_ts) > _SESSION_TTL_SECONDS
+            ]
+            for sid in stale_ids:
+                del _sessions[sid]
+            if stale_ids:
+                logger.info(f"清理了 {len(stale_ids)} 个过期会话")
         return session
 
     def __init_args__(self, sandtable_type: str = "", mode: str = "pipeline"):
@@ -138,6 +164,7 @@ class EvalSession:
         self.platforms: list[str] = []
         self.created_at: str = datetime.now(timezone.utc).isoformat()
         self._created_ts: float = _now_ts()
+        self._state_lock = asyncio.Lock()  # 保护单会话内的状态变更，防止并发竞态
 
         for phase in EvalPhase:
             self.phases[phase] = {"status": EvalPhaseStatus.PENDING.value}

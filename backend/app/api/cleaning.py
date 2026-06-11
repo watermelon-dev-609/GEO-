@@ -5,10 +5,11 @@ from fastapi import APIRouter, HTTPException
 from app.models.schemas import (
     CleaningRequest, CleaningResponse,
     InfoExtractionResponse, APIResponse,
+    CleaningRuleItem, CleaningRulesResponse, CleaningRulesUpdateRequest,
 )
 from app.services.llm.base import LLMFactory, LLMMessage
 from app.core.cleaner import TextCleaner
-from app.utils.config import load_settings, load_api_keys
+from app.utils.config import load_settings, load_api_keys, save_settings, invalidate_config_cache
 from app.models.enums import AIPlatform, SandtableType
 
 router = APIRouter()
@@ -82,6 +83,7 @@ async def clean_text(req: CleaningRequest):
         result = await cleaner.clean(
             content=req.content,
             sandtable_type=req.sandtable_type,
+            rules_config=req.rules_config,
         )
 
         dimensions = None
@@ -143,16 +145,65 @@ async def extract_info(req: CleaningRequest):
         if isinstance(detected, Exception) or detected is None:
             detected = SandtableType("smart_traffic")
 
+        from app.core.dimensions_shared import ALL_DIMENSION_KEYS
         return InfoExtractionResponse(
             sandtable_type=detected,
-            core_advantages=dims.get("core_advantages", []),
-            applicable_scenarios=dims.get("applicable_scenarios", []),
-            technical_features=dims.get("technical_features", []),
-            service_capabilities=dims.get("service_capabilities", []),
-            implementation_value=dims.get("implementation_value", []),
-            key_phrases=dims.get("key_phrases", []),
+            **{key: dims.get(key, []) for key in ALL_DIMENSION_KEYS},
         )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"信息提取失败: {str(e)}")
+
+
+@router.get("/rules", response_model=CleaningRulesResponse)
+async def get_cleaning_rules():
+    """获取当前清洗规则配置"""
+    settings = load_settings()
+    cleaning_cfg = settings.get("cleaning", {}).get("rules", {})
+    rules = []
+    for key, cfg in cleaning_cfg.items():
+        if isinstance(cfg, dict):
+            rules.append(CleaningRuleItem(
+                key=key,
+                label=cfg.get("label", key),
+                description=cfg.get("description", ""),
+                enabled=cfg.get("enabled", True),
+            ))
+    # 如果配置中没有规则（首次使用），返回默认规则
+    if not rules:
+        from app.prompts.cleaning import _RULE_DETAILS, _DEFAULT_RULE_ORDER
+        rules = [
+            CleaningRuleItem(
+                key=k,
+                label=k,
+                description=_RULE_DETAILS.get(k, ""),
+                enabled=True,
+            )
+            for k in _DEFAULT_RULE_ORDER
+        ]
+    return CleaningRulesResponse(rules=rules)
+
+
+@router.put("/rules", response_model=CleaningRulesResponse)
+async def update_cleaning_rules(req: CleaningRulesUpdateRequest):
+    """更新清洗规则配置并持久化到 settings.yaml"""
+    try:
+        settings = load_settings()
+        # 构建新的 cleaning.rules 配置
+        new_rules = {}
+        for item in req.rules:
+            new_rules[item.key] = {
+                "enabled": item.enabled,
+                "label": item.label,
+                "description": item.description,
+            }
+        # 更新 settings 中的 cleaning 段
+        if "cleaning" not in settings:
+            settings["cleaning"] = {}
+        settings["cleaning"]["rules"] = new_rules
+        # 原子写入
+        save_settings(settings)
+        return CleaningRulesResponse(rules=req.rules)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存清洗规则配置失败: {str(e)}")

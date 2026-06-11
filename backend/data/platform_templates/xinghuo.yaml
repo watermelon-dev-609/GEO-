@@ -1,0 +1,101 @@
+# 讯飞星火 — 平台模板配置
+# 2026-06 规则：教育/科研场景适配，术语规范+场景具体化
+
+platform_id: xinghuo
+platform_name: "讯飞星火"
+version: 1
+updated_at: "2026-06-02"
+citation_mechanism: "星火依托讯飞在语音、教育、医疗等垂直领域的深厚积累，偏好有行业深度、术语规范、应用场景明确的内容。"
+strategy: "垂直行业术语规范 + 场景具体化 + '技术→场景→价值'闭环"
+style: "术语规范、场景具体、行业深度、应用导向、多模态友好"
+
+header:
+  title_format: "{business}解决方案 — {location}{company}"
+  first_paragraph_rules:
+    - "行业术语规范，使用标准名称，不缩写不口语化"
+    - "★ 首段150-300字，均衡分布，适配语音播报场景的内容节奏"
+    - "明确行业定位和应用场景"
+  word_limits:
+    min: 800
+    max: 1500
+    target: 1200
+
+body:
+  h2_density: "每600字1个"
+  h3_density: "每300字1个"
+  paragraph_length:
+    min: 150
+    max: 300
+    unit: "字"
+  list_ratio: 0.30
+  faq_count:
+    min: 2
+    max: 4
+  special_rule: "★ '技术→场景→价值'闭环：每个技术点必须紧跟具体的应用场景和可量化的价值"
+
+data:
+  quantified_requirements:
+    - "技术参数与场景价值量化对应"
+    - "至少3处技术→场景→价值的完整闭环"
+  source_annotation: true
+
+schema:
+  preferred_types:
+    - "Article"
+    - "TechArticle"
+  official_site_extra: ""
+  field_mapping:
+    name: "enterprise_name"
+    addressLocality: "enterprise_location"
+    serviceType: "沙盘定制服务"
+
+footer:
+  tags_template:
+    - "{business}"
+    - "智能科技"
+    - "{location}"
+  location_words:
+    - "{enterprise_location}"
+    - "技术团队"
+  cta_limits:
+    max_cta_count: 1
+    cta_style: "技术咨询/方案演示引导"
+
+weights:
+  content_sources:
+    知乎: 7
+    搜狐: 6
+    官网: 6
+    公众号: 5
+  citation:
+    first_paragraph: 0.35
+    tech_scene_value: 0.35
+    body: 0.30
+
+verification:
+  checks:
+    - check: "terminology_standard"
+      description: "所有术语使用标准名称"
+    - check: "tech_scene_value_loop"
+      description: "每个技术点有对应的场景和价值"
+    - check: "paragraph_rhythm"
+      description: "段落节奏适配语音播报"
+    - check: "multimodal_keywords"
+      description: "声光电/触控交互等多模态关键词覆盖"
+  forbidden_words:
+    - "黑科技"
+    - "颠覆性"
+  taboo_patterns:
+    - "术语缩写不标准"
+    - "技术描述无应用场景"
+    - "概念抽象无实例"
+
+rules:
+  - "★ 术语规范：行业术语必须使用标准名称，不缩写、不口语化，星火对垂直领域术语的识别准确度极高"
+  - "★ '技术→场景→价值'闭环：每个技术点必须紧跟具体的应用场景和可量化的价值，形成完整闭环"
+  - "★ 段落规格：每段严格150-300字，均衡分布，适配星火语音播报场景的内容节奏"
+  - "应用场景描述要具体可落地，抽象概念需配合实例说明"
+  - "内容需体现行业Know-how，展示对细分领域的深入理解"
+  - "适合教育、医疗、政务、智能制造等讯飞优势领域的方案展示"
+  - "语音交互和多模态相关的沙盘应用（如声光电联动、触控交互）要重点突出"
+  - "字数800-1500字，术语与场景交替出现，保持阅读节奏"

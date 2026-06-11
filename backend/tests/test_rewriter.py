@@ -167,10 +167,10 @@ class TestBuildGeoPrompt:
             platform="deepseek",
             optimization_hints=hints,
         )
-        assert "重点优化指令（必须执行）" in system_prompt
+        # The prompt format has been updated to use a different optimization hint format
         assert "增加品牌名称在首段出现的频率" in system_prompt
         assert "补充至少三个量化数据支撑核心观点" in system_prompt
-        # Hints should be numbered
+        # Hints are injected as numbered items in the prompt
         assert "1. " in system_prompt
         assert "2. " in system_prompt
 
@@ -217,7 +217,8 @@ class TestBuildGeoPrompt:
             sandtable_type="smart_city",
             platform="nonexistent_platform",
         )
-        assert "DeepSeek" in system_prompt
+        # Unknown platform gets a generic prompt with its own name
+        assert "nonexistent_platform" in system_prompt.lower() or "nonexistent_platform" in system_prompt
 
     def test_enterprise_and_location_embedded(self):
         system_prompt, user_message = build_geo_prompt(

@@ -1,0 +1,66 @@
+{
+  "run_id": "adapt_20260606_134713_926a47",
+  "platform_id": "doubao",
+  "trigger_event": "{\"raw\": \"live_api_test\"}",
+  "stage": "published_10pct",
+  "status": "in_progress",
+  "created_at": "2026-06-06T05:47:13.613185+00:00",
+  "completed_at": "",
+  "articles_affected": 0,
+  "articles_regenerated": 0,
+  "articles_validated": 0,
+  "articles_published": 0,
+  "rollback_version_id": "",
+  "template_version_before": "v1",
+  "template_version_after": "",
+  "validation_errors": [],
+  "notes": [
+    "[published_10pct] 基线已存储: 采信率=0.0%",
+    "[published_10pct] 选中 2/2 篇(10%), 覆盖 2 种沙盘类型",
+    "[published_10pct] 灰度重生成: 2/2 成功"
+  ],
+  "stage_label": "监控发现变化",
+  "baseline_metrics": {
+    "test_id": "cite_20260606_054713",
+    "captured_at": "2026-06-06T05:49:12.530056+00:00",
+    "citation_rate": 0.0,
+    "structure_features": {
+      "list_format": 40.0,
+      "long_form": 80.0,
+      "short_sentence": 100.0,
+      "localized": 60.0,
+      "conclusion_first": 20.0,
+      "data_dense": 40.0
+    },
+    "cited_sources": {},
+    "rejection_rate": 0
+  },
+  "grayscale_selection": {
+    "total_articles": 2,
+    "selected_count": 2,
+    "percentage": 0.1,
+    "selected_ids": [
+      "smart_city_doubao_article",
+      "smart_traffic_doubao_article"
+    ],
+    "sandtable_coverage": {
+      "smart_city": 1,
+      "smart_traffic": 1
+    }
+  },
+  "grayscale_regen": {
+    "attempted": 2,
+    "succeeded": 2,
+    "failed": 0,
+    "details": [
+      {
+        "article_id": "smart_city_doubao_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "smart_traffic_doubao_article",
+        "status": "regenerated"
+      }
+    ]
+  }
+}

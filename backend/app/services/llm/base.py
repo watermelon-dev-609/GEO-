@@ -89,10 +89,14 @@ def _register_adapters():
     from app.services.llm.openai_compat import OpenAICompatAdapter
     from app.services.llm.claude import ClaudeAdapter
     from app.services.llm.wenxin import WenxinAdapter
+    from app.services.llm.ollama import OllamaAdapter
+    from app.services.llm.lmstudio import LMStudioAdapter
 
     LLMFactory.register("openai_compat", OpenAICompatAdapter)
     LLMFactory.register("claude", ClaudeAdapter)
     LLMFactory.register("wenxin", WenxinAdapter)
+    LLMFactory.register("ollama", OllamaAdapter)
+    LLMFactory.register("lmstudio", LMStudioAdapter)
 
 
 # 自动注册

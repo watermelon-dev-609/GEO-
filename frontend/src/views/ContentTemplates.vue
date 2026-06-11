@@ -42,8 +42,8 @@
       <!-- Tab 1: 写作模板 -->
       <el-tab-pane label="写作模板" name="templates">
         <div class="tab-toolbar">
-          <el-select v-model="tplFilter" size="small" placeholder="按沙盘筛选" clearable style="width:200px;">
-            <el-option v-for="s in SANDTABLE_TYPES" :key="s.value" :label="s.label" :value="s.value" />
+          <el-select v-model="tplFilter" size="small" placeholder="按类型筛选" clearable style="width:160px;">
+            <el-option v-for="c in tplCategories" :key="c" :label="c" :value="c" />
           </el-select>
           <el-button size="small" type="primary" @click="openNewTemplate">新建模板</el-button>
           <el-button size="small" @click="loadTemplates" :loading="tplLoading" :icon="Refresh">刷新</el-button>
@@ -204,6 +204,7 @@
                 <el-option label="产品文案" value="产品文案" />
                 <el-option label="案例模板" value="案例模板" />
                 <el-option label="FAQ模板" value="FAQ模板" />
+                <el-option label="平台变体" value="平台变体" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -243,7 +244,7 @@ import { computed, onMounted, ref } from 'vue'
 import { Delete, Refresh, Plus, Download, EditPen } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listTemplates, saveTemplate as apiSaveTemplate, deleteTemplate as apiDeleteTemplate, getStandards, saveStandards as apiSaveStandards } from '../api'
-import { SANDTABLE_TYPES } from '../constants'
+
 
 const activeTab = ref('templates')
 
@@ -257,23 +258,25 @@ const editingTpl = ref(null)
 const savingTpl = ref(false)
 const tplForm = ref({ name: '', category: '企业介绍', description: '', content: '', variables: [] })
 
+const tplCategories = ['企业介绍', '产品文案', '案例模板', 'FAQ模板', '平台变体']
+
 const filteredTemplates = computed(() => {
   if (!tplFilter.value) return templates.value
-  return templates.value.filter(t => t.category.includes(tplFilter.value) || t.name.includes(tplFilter.value) || t.description.includes(tplFilter.value))
+  return templates.value.filter(t => t.category === tplFilter.value)
 })
 
 const renderedPreview = computed(() => {
   if (!editingTpl.value?.content) return ''
-  return editingTpl.value.content
+  let html = editingTpl.value.content
     .replace(/</g, '&lt;')
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br>')
     .replace(/#{([^}]+)}/g, '<mark>$1</mark>')
-    .replace(/^(.+)$/gm, (line) => {
-      if (line.startsWith('#')) return `<strong style="font-size:18px;">${line.replace(/^#+\s*/, '')}</strong>`
-      if (line.startsWith('- ')) return `&bull; ${line.slice(2)}`
-      return line
-    })
+  html = html.replace(/^(.+)$/gm, (line) => {
+    if (/^#{1,6}\s/.test(line)) return `<strong style="font-size:18px;">${line.replace(/^#+\s*/, '')}</strong>`
+    if (/^[-*]\s/.test(line)) return `&bull; ${line.replace(/^[-*]\s*/, '')}`
+    return line
+  })
+  html = '<p>' + html.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>') + '</p>'
+  return html
 })
 
 async function loadTemplates() {
@@ -339,20 +342,21 @@ async function deleteTemplate(id) {
     ElMessage.success('已删除')
     await loadTemplates()
   } catch (e) {
-    if (e !== 'cancel' && e?.response) {
+    if (e !== 'cancel') {
       ElMessage.error('删除失败: ' + (e.response?.data?.detail || e.message))
     }
   }
 }
 
-// ── 审核标准 ──
-const checklist = ref([
+// ── 审核标准（用户可自定义权重和阈值，以下为系统默认配置示例）──
+const DEFAULT_CHECKLIST = [
   { key: 'entity', label: '实体完整性', enabled: true, weight: 20, threshold: 60, description: '企业名、地域、产品名是否完整且位置突出' },
-  { key: 'structure', label: '结构化程度', enabled: true, weight: 15, threshold: 50, description: '是否有清晰的H2/H3标题层级、合理段落长度和列表结构' },
-  { key: 'quantified', label: '量化数据', enabled: true, weight: 25, threshold: 50, description: '数字+单位的量化表述密度，如"200+项目""1:1000精度"等' },
+  { key: 'structure', label: '结构化程度', enabled: true, weight: 15, threshold: 50, description: '标题层级、段落长度和列表结构是否合理' },
+  { key: 'quantified', label: '量化数据', enabled: true, weight: 25, threshold: 50, description: '是否包含可验证的数据支撑（避免形容词替代量化）' },
   { key: 'faq', label: 'FAQ友好度', enabled: true, weight: 15, threshold: 40, description: '是否包含自然问答对，适配对话式AI检索' },
-  { key: 'source', label: '信源一致性', enabled: true, weight: 25, threshold: 70, description: '内容在五维信源数据中是否有依据，是否存在编造或夸大' },
-])
+  { key: 'source', label: '信源一致性', enabled: true, weight: 25, threshold: 70, description: '内容是否有信源依据，是否存在编造或夸大' },
+]
+const checklist = ref([...DEFAULT_CHECKLIST.map(c => ({ ...c }))])
 const stdsLoading = ref(false)
 const stdsSaving = ref(false)
 
@@ -389,13 +393,7 @@ async function saveStandards() {
 }
 
 function resetStandards() {
-  checklist.value = [
-    { key: 'entity', label: '实体完整性', enabled: true, weight: 20, threshold: 60, description: '企业名、地域、产品名是否完整且位置突出' },
-    { key: 'structure', label: '结构化程度', enabled: true, weight: 15, threshold: 50, description: '是否有清晰的H2/H3标题层级、合理段落长度和列表结构' },
-    { key: 'quantified', label: '量化数据', enabled: true, weight: 25, threshold: 50, description: '数字+单位的量化表述密度，如"200+项目""1:1000精度"等' },
-    { key: 'faq', label: 'FAQ友好度', enabled: true, weight: 15, threshold: 40, description: '是否包含自然问答对，适配对话式AI检索' },
-    { key: 'source', label: '信源一致性', enabled: true, weight: 25, threshold: 70, description: '内容在五维信源数据中是否有依据，是否存在编造或夸大' },
-  ]
+  checklist.value = DEFAULT_CHECKLIST.map(c => ({ ...c }))
   ElMessage.success('已恢复默认标准')
 }
 
@@ -406,7 +404,7 @@ const exporting = ref(false)
 async function doExport() {
   exporting.value = true
   try {
-    let content = '# GEO内容规范文档\n\n> 生成时间：' + new Date().toLocaleDateString('zh-CN') + '\n\n'
+    let content = '# GEO内容规范文档（系统内置方法论参考）\n\n> 生成时间：' + new Date().toLocaleDateString('zh-CN') + '\n\n'
     if (exportItems.value.includes('templates')) {
       content += '## 写作模板\n\n'
       templates.value.forEach(t => {
@@ -421,13 +419,14 @@ async function doExport() {
     }
     if (exportItems.value.includes('guide')) {
       content += '\n## GEO 写作指南\n\n'
+      content += '> 以下为GEO（生成式搜索优化）方法论参考框架，具体应用需结合实际内容调整。\n\n'
       content += '### AI 采信六原则\n\n'
-      content += '1. **实体锚定** — 首次出现企业名、地域、产品名必须完整清晰\n'
-      content += '2. **定义优先** — 专业概念给1-2句权威定义\n'
-      content += '3. **量化事实** — 所有能力用具体数字支撑\n'
-      content += '4. **FAQ结构** — 嵌入自然问答对提高对话检索命中率\n'
-      content += '5. **层级结构化** — H2/H3标题 + 列表组织信息\n'
-      content += '6. **信息增量** — 本地化细节 + 行业独特信息，区别于通用模板\n'
+      content += '1. **实体锚定** — 企业名、地域、产品名完整清晰\n'
+      content += '2. **定义优先** — 专业概念给出明确定义，帮助AI正确理解\n'
+      content += '3. **量化事实** — 用可验证的数据支撑论述\n'
+      content += '4. **FAQ结构** — 嵌入自然问答对，适配对话式AI检索\n'
+      content += '5. **层级结构化** — 合理使用标题和列表组织信息\n'
+      content += '6. **信息增量** — 提供有区分度的本地化细节和行业信息\n'
     }
     const blob = new Blob([content], { type: 'text/markdown;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -444,6 +443,7 @@ async function doExport() {
 
 function doQuickExport() {
   activeTab.value = 'guide'
+  doExport()
 }
 
 onMounted(() => {

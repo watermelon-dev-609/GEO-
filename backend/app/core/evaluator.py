@@ -18,12 +18,14 @@ from app.prompts.evaluation import (
 )
 from app.utils.retry import async_retry
 from app.utils.cache import eval_cache
-from app.utils.config import load_settings, load_api_keys, get_enterprise_name, get_enterprise_location
+from app.utils.config import load_settings, load_api_keys, get_enterprise_name, get_enterprise_location, get_brand_variants
 
 logger = logging.getLogger(__name__)
 
 
 # ── 预置评测问题库 ──
+# 模拟不同用户角色向AI平台提问的查询模板，用于评测引擎测试
+# 问题均为模拟查询，非企业真实客户提问
 
 ROLE_QUESTIONS = {
     UserRole.B_END_PROCUREMENT: [
@@ -89,6 +91,15 @@ class AIEvaluator:
         self.embedding_svc = EmbeddingService()
         self.vector_store = VectorStore(index_name="evaluation")
         self.llm = llm_adapter
+        # 从配置读取评测温度参数
+        eval_cfg = self.settings.get("evaluation", {})
+        temp_cfg = eval_cfg.get("temperature", {})
+        self._temp_advantage = temp_cfg.get("advantage_citation", 0.3)
+        self._temp_structure = temp_cfg.get("structure_quality", 0.3)
+        self._temp_differentiation = temp_cfg.get("differentiation", 0.3)
+        self._temp_eeat = temp_cfg.get("eeat", 0.3)
+        self._temp_real_citation = temp_cfg.get("real_citation", 0.5)
+        self._temp_source = temp_cfg.get("source_consistency", 0.2)
 
     async def evaluate(
         self,
@@ -98,8 +109,14 @@ class AIEvaluator:
         platforms: list[AIPlatform] | None = None,
         user_roles: list[UserRole] | None = None,
         custom_questions: list[str] | None = None,
+        diagnosis_result: dict | None = None,
     ) -> dict:
-        """完整评测流程"""
+        """完整评测流程
+
+        Args:
+            diagnosis_result: 可选，来自 ContentDiagnoser 的规则诊断结果，
+                             用于交叉引用和增强短板定位
+        """
         start = time.perf_counter()
 
         # 空文本/过短文本校验
@@ -149,6 +166,7 @@ class AIEvaluator:
                 optimized_text, sandtable_type,
                 enterprise_name=get_enterprise_name(),
                 enterprise_location=get_enterprise_location(),
+                original_text=original_text,
             )
 
         # Step 10: 分平台综合评分（8维加权）
@@ -159,8 +177,8 @@ class AIEvaluator:
             "structure_quality": structure_scores.get("average", 0),
             "differentiation": differentiation_scores.get("average", 0),
             "real_citation": real_citation_scores.get("average", 0),
-            "eeat_score": eeat_scores.get("average", 70),
-            "source_consistency": source_consistency_scores.get("average", 100),
+            "eeat_score": eeat_scores.get("average"),
+            "source_consistency": source_consistency_scores.get("average"),
         }
         overall = self._calculate_overall_v2(components)
 
@@ -186,8 +204,12 @@ class AIEvaluator:
         if original_text:
             comparison = await self._compare_before_after(original_text, optimized_text, questions)
 
-        # Step 11: 短板诊断（统一使用v2）
-        weak_points, suggestions = self._diagnose_v2(components, sandtable_type)
+        # Step 11: 短板诊断（平台感知 + 诊断器交叉引用）
+        primary_platform = platforms[0] if platforms else AIPlatform.DEEPSEEK
+        weak_points, suggestions = self._diagnose_v2(
+            components, sandtable_type, platform_id=primary_platform.value,
+            diagnosis_result=diagnosis_result,
+        )
 
         elapsed = (time.perf_counter() - start) * 1000
 
@@ -197,6 +219,7 @@ class AIEvaluator:
             "before_after_comparison": comparison,
             "weak_points": weak_points,
             "suggestions": suggestions,
+            "diagnosis_cross_ref": _cross_ref_diagnosis(diagnosis_result, components) if diagnosis_result else None,
             "total_time_ms": elapsed,
             "questions_used": len(questions),
         }
@@ -301,14 +324,15 @@ class AIEvaluator:
                         sandtable_type=sandtable_type.label,
                     )),
                 ]
-                resp = await async_retry(self.llm.chat, messages, temperature=0.3, max_tokens=512)
+                resp = await async_retry(self.llm.chat, messages, temperature=self._temp_advantage, max_tokens=512)
                 # 从回复中提取评分
                 score = self._extract_score(resp.content)
-                scores.append(score)
-                eval_cache.set(cache_key, score)
+                if score is not None:
+                    scores.append(score)
+                    eval_cache.set(cache_key, score)
             except Exception as e:
-                logger.warning(f"LLM评测失败: {e}")
-                scores.append(50)  # 默认中等分数
+                logger.warning(f"LLM评测失败，跳过该问题: {e}")
+                # 不注入假分数，跳过失败的问题让结果基于实际成功评测的数据
 
         avg = np.mean(scores) if scores else 0
         return {"average": round(float(avg), 1), "details": scores}
@@ -327,7 +351,8 @@ class AIEvaluator:
             match = re.search(pat, response, re.IGNORECASE)
             if match:
                 return float(match.group(1))
-        return 60.0  # 默认
+        logger.warning(f"_extract_score 无法从LLM回复中提取评分，原始回复前120字符: {response[:120]}")
+        return None  # 无法解析时不捏造分数
 
     async def _compare_before_after(
         self,
@@ -358,9 +383,20 @@ class AIEvaluator:
         """计算综合评分（8维加权，与流式评测一致，权重统一从 DimensionRegistry 读取）"""
         from app.core.eval_dimensions import DEFAULT_WEIGHTS
         weights = {k: v / 100.0 for k, v in DEFAULT_WEIGHTS.items()}
-        overall = sum(components.get(k, 0) * w for k, w in weights.items())
-        source_consistency = components.get("source_consistency", 100)
-        if source_consistency < 30:
+
+        # 仅使用有实际值的维度计算（排除 None，即未评测的维度）
+        available = {k: v for k, v in components.items() if v is not None}
+        if not available:
+            return 0.0
+
+        total_weight = sum(weights.get(k, 0) for k in available)
+        if total_weight == 0:
+            return 0.0
+
+        overall = sum(available.get(k, 0) * (weights.get(k, 0) / total_weight) for k in available)
+
+        source_consistency = components.get("source_consistency")
+        if source_consistency is not None and source_consistency < 30:
             overall = min(overall, 50.0)
 
         return overall
@@ -407,96 +443,96 @@ class AIEvaluator:
 
         for phase in phase_order:
             if session.cancelled:
-                session.skip_phase(phase)
+                await session.skip_phase(phase)
                 yield _sse_event("phase_skipped", session.session_id, phase.value,
                                  {"reason": "cancelled"}, session.overall_progress)
                 continue
 
-            session.start_phase(phase)
+            await session.start_phase(phase)
 
             try:
                 if phase == EvalPhase.GENERATING_QUESTIONS:
                     questions = self._generate_questions(sandtable_type, user_roles, custom_questions or [])
                     result = {"questions": questions, "count": len(questions)}
-                    session.complete_phase(phase, result)
+                    await session.complete_phase(phase, result)
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      result, session.overall_progress)
 
                 elif phase == EvalPhase.BRAND_RECALL:
                     if "brand_recall" not in enabled_keys:
-                        session.skip_phase(phase)
+                        await session.skip_phase(phase)
                         yield _sse_event("phase_skipped", session.session_id, phase.value,
                                          {"reason": "dimension_disabled"}, session.overall_progress)
                         continue
                     self._build_text_index(optimized_text, sandtable_type)
                     brand_result = self._evaluate_brand_recall(questions, optimized_text)
-                    session.complete_phase(phase, brand_result)
+                    await session.complete_phase(phase, brand_result)
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      brand_result, session.overall_progress)
 
                 elif phase == EvalPhase.SOLUTION_MATCH:
                     if "solution_match" not in enabled_keys:
-                        session.skip_phase(phase)
+                        await session.skip_phase(phase)
                         yield _sse_event("phase_skipped", session.session_id, phase.value,
                                          {"reason": "dimension_disabled"}, session.overall_progress)
                         continue
                     solution_result = self._evaluate_solution_match(questions, optimized_text)
-                    session.complete_phase(phase, solution_result)
+                    await session.complete_phase(phase, solution_result)
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      solution_result, session.overall_progress)
 
                 elif phase == EvalPhase.ADVANTAGE_CITATION:
                     if "advantage_citation" not in enabled_keys or not self.llm:
                         reason = "no_llm" if not self.llm else "dimension_disabled"
-                        session.skip_phase(phase)
+                        await session.skip_phase(phase)
                         yield _sse_event("phase_skipped", session.session_id, phase.value,
                                          {"reason": reason}, session.overall_progress)
                         continue
                     advantage_result = await self._evaluate_advantage_citation(questions, optimized_text, sandtable_type)
-                    session.complete_phase(phase, advantage_result)
+                    await session.complete_phase(phase, advantage_result)
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      advantage_result, session.overall_progress)
 
                 elif phase == EvalPhase.REAL_CITATION:
                     if "real_citation" not in enabled_keys or not self.llm:
                         reason = "no_llm" if not self.llm else "dimension_disabled"
-                        session.skip_phase(phase)
+                        await session.skip_phase(phase)
                         yield _sse_event("phase_skipped", session.session_id, phase.value,
                                          {"reason": reason}, session.overall_progress)
                         continue
                     real_citation_result = await self._evaluate_real_citation(questions, optimized_text, sandtable_type)
-                    session.complete_phase(phase, real_citation_result)
+                    await session.complete_phase(phase, real_citation_result)
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      real_citation_result, session.overall_progress)
 
                 elif phase == EvalPhase.STRUCTURE_QUALITY:
                     if "structure_quality" not in enabled_keys or not self.llm:
                         reason = "no_llm" if not self.llm else "dimension_disabled"
-                        session.skip_phase(phase)
+                        await session.skip_phase(phase)
                         yield _sse_event("phase_skipped", session.session_id, phase.value,
                                          {"reason": reason}, session.overall_progress)
                         continue
                     structure_result = await self._evaluate_structure(optimized_text, sandtable_type)
-                    session.complete_phase(phase, structure_result)
+                    await session.complete_phase(phase, structure_result)
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      structure_result, session.overall_progress)
 
                 elif phase == EvalPhase.DIFFERENTIATION:
                     if "differentiation" not in enabled_keys or not self.llm:
                         reason = "no_llm" if not self.llm else "dimension_disabled"
-                        session.skip_phase(phase)
+                        await session.skip_phase(phase)
                         yield _sse_event("phase_skipped", session.session_id, phase.value,
                                          {"reason": reason}, session.overall_progress)
                         continue
                     differentiation_result = await self._evaluate_differentiation(optimized_text, sandtable_type)
-                    session.complete_phase(phase, differentiation_result)
+                    await session.complete_phase(phase, differentiation_result)
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      differentiation_result, session.overall_progress)
 
                 elif phase == EvalPhase.EEAT_CHECK:
                     if "eeat_score" not in enabled_keys or not self.llm:
                         reason = "no_llm" if not self.llm else "dimension_disabled"
-                        session.skip_phase(phase)
+                        await session.skip_phase(phase)
                         yield _sse_event("phase_skipped", session.session_id, phase.value,
                                          {"reason": reason}, session.overall_progress)
                         continue
@@ -504,14 +540,14 @@ class AIEvaluator:
                         optimized_text, sandtable_type,
                         enterprise_name=get_enterprise_name(),
                     )
-                    session.complete_phase(phase, eeat_result)
+                    await session.complete_phase(phase, eeat_result)
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      eeat_result, session.overall_progress)
 
                 elif phase == EvalPhase.SOURCE_CHECK:
                     if "source_consistency" not in enabled_keys or not self.llm:
                         reason = "no_llm" if not self.llm else "dimension_disabled"
-                        session.skip_phase(phase)
+                        await session.skip_phase(phase)
                         yield _sse_event("phase_skipped", session.session_id, phase.value,
                                          {"reason": reason}, session.overall_progress)
                         continue
@@ -519,8 +555,9 @@ class AIEvaluator:
                         optimized_text, sandtable_type,
                         enterprise_name=get_enterprise_name(),
                         enterprise_location=get_enterprise_location(),
+                        original_text=original_text,
                     )
-                    session.complete_phase(phase, source_consistency_result)
+                    await session.complete_phase(phase, source_consistency_result)
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      source_consistency_result, session.overall_progress)
 
@@ -557,7 +594,10 @@ class AIEvaluator:
                         comparison = await self._compare_before_after(original_text, optimized_text, questions)
 
                     all_scores = {**components, "overall": overall}
-                    weak_points, suggestions = self._diagnose_v2(all_scores, sandtable_type)
+                    weak_points, suggestions = self._diagnose_v2(
+                        all_scores, sandtable_type,
+                        platform_id=session.platform_id if hasattr(session, 'platform_id') else None,
+                    )
 
                     comprehensive_result = {
                         "overall_score": round(overall, 1),
@@ -567,8 +607,8 @@ class AIEvaluator:
                         "weak_points": weak_points,
                         "suggestions": suggestions,
                     }
-                    session.complete_phase(phase, comprehensive_result)
-                    session.mark_completed(round(overall, 1))
+                    await session.complete_phase(phase, comprehensive_result)
+                    await session.mark_completed(round(overall, 1))
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      comprehensive_result, session.overall_progress)
                     yield _sse_event("eval_complete", session.session_id, "done",
@@ -576,11 +616,11 @@ class AIEvaluator:
 
             except Exception as e:
                 logger.exception(f"Session {session.session_id}: phase {phase.value} failed")
-                session.fail_phase(phase, str(e))
+                await session.fail_phase(phase, str(e))
                 yield _sse_event("phase_failed", session.session_id, phase.value,
                                  {"error": str(e)}, session.overall_progress)
                 if phase == EvalPhase.COMPREHENSIVE:
-                    session.mark_failed()
+                    await session.mark_failed()
                     yield _sse_event("eval_error", session.session_id, "error",
                                      {"error": str(e)}, session.overall_progress)
 
@@ -603,8 +643,10 @@ class AIEvaluator:
                 sandtable_type=sandtable_type.label,
             )),
         ]
-        resp = await async_retry(self.llm.chat, messages, temperature=0.3, max_tokens=512)
+        resp = await async_retry(self.llm.chat, messages, temperature=self._temp_structure, max_tokens=512)
         score = self._extract_score(resp.content)
+        if score is None:
+            score = 0.0
         result = {"average": score, "analysis": resp.content, "details": [score]}
         eval_cache.set(cache_key, result)
         return result
@@ -628,8 +670,10 @@ class AIEvaluator:
                 sandtable_type=sandtable_type.label,
             )),
         ]
-        resp = await async_retry(self.llm.chat, messages, temperature=0.3, max_tokens=512)
+        resp = await async_retry(self.llm.chat, messages, temperature=self._temp_differentiation, max_tokens=512)
         score = self._extract_score(resp.content)
+        if score is None:
+            score = 0.0
         result = {"average": score, "analysis": resp.content, "details": [score]}
         eval_cache.set(cache_key, result)
         return result
@@ -644,7 +688,7 @@ class AIEvaluator:
         if enterprise_name is None:
             enterprise_name = get_enterprise_name()
         if not self.llm:
-            return {"average": 0, "details": [], "reason": "no_llm"}
+            return {"average": None, "details": [], "reason": "no_llm"}
 
         cache_key = f"eeat:{hashlib.md5(text.encode()).hexdigest()}"
         cached = eval_cache.get(cache_key)
@@ -659,8 +703,10 @@ class AIEvaluator:
                 enterprise_name=enterprise_name,
             )),
         ]
-        resp = await async_retry(self.llm.chat, messages, temperature=0.3, max_tokens=512)
+        resp = await async_retry(self.llm.chat, messages, temperature=self._temp_eeat, max_tokens=512)
         score = self._extract_score(resp.content)
+        if score is None:
+            score = 0.0
         result = {"average": score, "analysis": resp.content, "details": [score]}
         eval_cache.set(cache_key, result)
         return result
@@ -698,7 +744,7 @@ class AIEvaluator:
                         question=q,
                     )),
                 ]
-                resp = await async_retry(self.llm.chat, messages, temperature=0.5, max_tokens=512)
+                resp = await async_retry(self.llm.chat, messages, temperature=self._temp_real_citation, max_tokens=512)
 
                 citation_score = self._analyze_citation(resp.content, text)
                 cited_flag = citation_score > 0.3  # 30%以上实体被引用即视为有效引用
@@ -727,39 +773,78 @@ class AIEvaluator:
         }
 
     def _analyze_citation(self, answer: str, source_text: str) -> float:
-        """分析 LLM 回答是否引用了源文本中的关键实体"""
+        """分析 LLM 回答中引用的实体是否来自源文本（精度检查，非召回检查）
+
+        原逻辑问题：从源文本提取全部实体，检查单个回答覆盖了多少 → 单个回答永远只能覆盖
+        一小部分实体，导致分数系统性偏低（~21分）。
+
+        修正逻辑：从 LLM 回答中提取实体，检查其中多少能在源文本中找到 → 衡量回答的
+        "信源忠实度"而非"覆盖度"。如果 LLM 编造了源文本中没有的数据/企业名，会被扣分。
+        """
         import re
 
-        entities = set()
-        # 品牌/企业名（从源文本中动态提取2-8字中文专有名词）
-        for m in re.finditer(r'[一-鿿]{2,8}(?:公司|科技|智能|模型|沙盘|定制|厂家|有限)', source_text):
-            entities.add(m.group())
-        # 补充硬编码的品牌变体
-        for m in re.finditer(r'(微艺达|武汉微艺达|沙盘模型|定制沙盘)', source_text):
-            entities.add(m.group())
-        # 量化数据（数字+中文单位）
-        for m in re.finditer(r'\d+\+?\s*(?:个|项|套|年|㎡|平方米|公里|人|次|万元|亿|%|以上|余家)', source_text):
-            entities.add(m.group())
-        # 精度/比例
-        for m in re.finditer(r'\d+[:：]\d+', source_text):
-            entities.add(m.group())
-        # 中文技术术语（2-8字，后跟技术后缀）
-        for m in re.finditer(r'[一-鿿]{2,8}(?:系统|平台|模型|技术|方案|工艺|仿真|沙盘|数据|控制|联动|展示|服务|定制|设计|制造)', source_text):
-            entities.add(m.group())
-        # 数字+中文组合（如 "200+项目"）
-        for m in re.finditer(r'\d+\+?\s*[一-鿿]{1,4}', source_text):
-            entities.add(m.group())
+        # 从回答中提取实体（而非从源文本）
+        def _extract_from(text: str):
+            core = set()
+            data = set()
+            tech = set()
 
-        if not entities:
-            # 实体提取失败时，回退到简单字符重叠度
+            # 核心实体：品牌/企业名
+            for m in re.finditer(r'[一-鿿]{2,8}(?:公司|科技|智能|有限公司)', text):
+                core.add(m.group())
+            brand_variants = get_brand_variants()
+            if brand_variants:
+                escaped = [re.escape(v) for v in brand_variants]
+                brand_pattern = '|'.join(escaped)
+                for m in re.finditer(brand_pattern, text):
+                    core.add(m.group())
+
+            # 数据实体：量化指标
+            for m in re.finditer(r'\d+\+?\s*(?:个|项|套|年|㎡|平方米|公里|人|次|万元|亿|%|以上|余家)', text):
+                data.add(m.group())
+            for m in re.finditer(r'\d+\+?\s*[一-鿿]{1,4}', text):
+                data.add(m.group())
+            for m in re.finditer(r'\d+[:：]\d+', text):
+                data.add(m.group())
+
+            # 技术实体：术语/产品名
+            for m in re.finditer(r'[一-鿿]{2,8}(?:系统|平台|模型|技术|方案|工艺|仿真|沙盘|数据|控制|联动|展示|服务|定制|设计|制造|厂家)', text):
+                tech.add(m.group())
+
+            return core, data, tech
+
+        answer_core, answer_data, answer_tech = _extract_from(answer)
+
+        all_answer_entities = answer_core | answer_data | answer_tech
+        if not all_answer_entities:
+            # 回答中没有可识别实体 → 退化为字符级重叠检查
             source_chars = set(source_text)
             answer_chars = set(answer)
-            if not source_chars:
+            if not source_chars or not answer_chars:
                 return 0.0
-            return len(source_chars & answer_chars) / len(source_chars)
+            return len(source_chars & answer_chars) / max(len(answer_chars), 1)
 
-        matched = sum(1 for e in entities if e in answer)
-        return matched / len(entities)
+        # 加权计分：回答中的实体有多少能在源文本中找到（精度检查）
+        core_matched = sum(1 for e in answer_core if e in source_text)
+        data_matched = sum(1 for e in answer_data if e in source_text)
+        tech_matched = sum(1 for e in answer_tech if e in source_text)
+
+        core_weight = len(answer_core) * 3
+        data_weight = len(answer_data) * 2
+        tech_weight = len(answer_tech) * 1
+        total_weight = core_weight + data_weight + tech_weight
+
+        if total_weight == 0:
+            return 0.0
+
+        weighted_matched = core_matched * 3 + data_matched * 2 + tech_matched * 1
+        score = weighted_matched / total_weight
+
+        # 源文本中有对应品牌实体 → 加分（说明回答引用了正确的企业信息）
+        if answer_core and core_matched >= len(answer_core) * 0.5:
+            score = max(score, 0.5)
+
+        return score
 
     async def _evaluate_source_consistency(
         self,
@@ -768,6 +853,7 @@ class AIEvaluator:
         enterprise_name: str | None = None,
         enterprise_location: str | None = None,
         dimensions: dict | None = None,
+        original_text: str | None = None,
     ) -> dict:
         """信源一致性检查：检测生成文本是否偏离企业信源数据"""
         if enterprise_name is None:
@@ -775,16 +861,16 @@ class AIEvaluator:
         if enterprise_location is None:
             enterprise_location = get_enterprise_location()
         if not self.llm:
-            return {"average": 70, "details": [], "reason": "no_llm"}
+            return {"average": None, "details": [], "reason": "no_llm"}
 
         from app.prompts.evaluation import SOURCE_CHECK_SYSTEM, SOURCE_CHECK_USER
 
-        cache_key = f"source_check:{hashlib.md5(text.encode()).hexdigest()}"
+        cache_key = f"source_check:{hashlib.md5((text + (original_text or '')).encode()).hexdigest()}"
         cached = eval_cache.get(cache_key)
         if cached is not None:
             return cached
 
-        # 构建信源概要：优先用五维信息，否则从文本中提取关键声明
+        # 构建信源概要：企业信息 + 五维信息 + 原始文案（最重要的事实基准）
         dims_summary = f"企业名称：{enterprise_name}\n所在地：{enterprise_location}"
         if dimensions:
             parts = []
@@ -795,6 +881,11 @@ class AIEvaluator:
             if parts:
                 dims_summary += "\n" + "\n".join(parts)
 
+        # 原始文案是事实基准的最重要参照
+        original_ref = ""
+        if original_text:
+            original_ref = f"\n\n## 原始素材（事实基准——优化文案中的所有事实性信息应来源于此）\n{original_text[:2000]}"
+
         try:
             messages = [
                 LLMMessage(role="system", content=SOURCE_CHECK_SYSTEM),
@@ -803,59 +894,190 @@ class AIEvaluator:
                     enterprise_name=enterprise_name,
                     enterprise_location=enterprise_location,
                     input_dimensions=dims_summary,
+                    original_reference=original_ref,
                 )),
             ]
-            resp = await async_retry(self.llm.chat, messages, temperature=0.2, max_tokens=512)
+            resp = await async_retry(self.llm.chat, messages, temperature=self._temp_source, max_tokens=512)
             score = self._extract_score(resp.content)
-            # 限制分数范围
-            score = max(0, min(100, score))
-            result = {"average": score, "analysis": resp.content[:500], "details": [score]}
+            if score is not None:
+                score = max(0.0, min(100.0, float(score)))
+            result = {"average": score, "analysis": resp.content[:500], "details": [score] if score is not None else []}
             eval_cache.set(cache_key, result)
             return result
         except Exception as e:
             logger.warning(f"信源一致性检查失败: {e}")
-            return {"average": 70, "details": [], "error": str(e)}
+            return {"average": None, "details": [], "error": str(e)}
 
-    def _diagnose_v2(self, scores: dict, sandtable_type: SandtableType) -> tuple[list[str], list[str]]:
-        """短板诊断 v2 — 支持任意维度组合"""
+    def _diagnose_v2(
+        self,
+        scores: dict,
+        sandtable_type: SandtableType,
+        platform_id: str | None = None,
+        diagnosis_result: dict | None = None,
+    ) -> tuple[list[str], list[str]]:
+        """短板诊断 v2 — 平台感知 + 诊断器交叉引用
+
+        Args:
+            scores: 各维度得分
+            sandtable_type: 沙盘类型
+            platform_id: 目标平台ID（如 deepseek/doubao/kimi），用于平台差异化建议
+            diagnosis_result: 可选，ContentDiagnoser 的规则诊断结果，用于交叉验证
+        """
         weak_points = []
         suggestions = []
 
-        thresholds = {
-            "brand_recall": ("品牌召回率", "品牌名称、地域标识、核心关键词在文本中的密度和位置不够突出",
-                             '建议：在文案首段和标题中更突出"武汉微艺达"品牌名和地域标识，增加核心关键词自然密度'),
-            "solution_match": ("方案匹配度", "文本与用户实际搜索意图的语义相关性不足",
-                               "建议：增加场景化描述和问题导向内容，让文本更贴近用户的实际搜索问法"),
-            "advantage_citation": ("优势采信率", "核心优势在AI模拟引用中未被充分提及",
-                                   "建议：将核心优势以独立段落呈现，确保每条优势有具体数据和案例支撑"),
-            "structure_quality": ("结构化程度", "文本结构不够清晰，AI提取关键信息的难度较大",
-                                  "建议：增加清晰的标题层级，使用列表呈现关键信息，控制段落长度在200字以内"),
-            "differentiation": ("差异化程度", "文本缺乏独特信息，易被竞品内容替代",
-                                "建议：增加具体数据、专利号、获奖信息、项目量级等差异化内容"),
-            "real_citation": ("真实采信率", "LLM在实际回答中引用素材信息的比例偏低",
-                              "建议：增加可被直接引用的实体锚点和定义性陈述，确保品牌名、量化数据和FAQ格式在文中清晰呈现"),
-            "source_consistency": ("信源一致性", "生成文本中存在偏离企业官方信源的信息，存在AI幻觉风险",
-                                   "建议：返回GEO工坊重新优化，确保五维信息完整准确，避免LLM编造数据"),
-            "eeat_score": ("E-E-A-T权威度", "文本在企业经验、专业度、权威性、可信度方面表现不足，AI采信权重偏低",
-                           "建议：增加企业年限/项目数量（Experience）、技术工艺深度（Expertise）、资质认证（Authoritativeness）、真实联系方式（Trustworthiness）等权威信号"),
+        # ── 平台差异化阈值和建议 ──
+        platform = platform_id or "base"
+
+        # 平台专属及格线：不同平台对同一维度的容忍度不同
+        _thresholds = {
+            "brand_recall": 60,
+            "solution_match": 60,
+            "advantage_citation": 60,
+            "structure_quality": 55 if platform == "doubao" else 60,  # 豆包：短句结构容忍度高
+            "differentiation": 60,
+            "real_citation": 60,
+            "source_consistency": 60,
+            "eeat_score": 55 if platform in ("kimi", "claude") else 60,  # Kimi/Claude对权威度最敏感
+        }
+
+        # 平台专属建议模板
+        _suggestions = {
+            "brand_recall": {
+                "deepseek": f'在全文每个自包含RAG单元（200-300字）中嵌入"{get_enterprise_name()}"品牌名和"{get_enterprise_location()}"地域词',
+                "doubao": f'在首句和每段开头突出"{get_enterprise_name()}"，使用简短直接的品牌表述',
+                "kimi": f'在标题、每个H2首句、FAQ答案首句中重复"{get_enterprise_name()}"全称，确保全文≥5次',
+                "base": f'在文案首段和标题中更突出"{get_enterprise_name()}"品牌名和地域标识',
+            },
+            "structure_quality": {
+                "deepseek": "按每200-300字一个自包含信息单元重组内容，确保每个单元有独立的问题+答案+数据",
+                "doubao": "将长段落拆分为短段落（≤120字），每句≤30字，使用列表代替叙述段落",
+                "kimi": "采用'背景→分析→结论→依据'四层递进结构，每层首句含品牌名",
+                "base": "增加清晰的标题层级（H2/H3），使用列表呈现关键信息，控制段落长度",
+            },
+            "advantage_citation": {
+                "deepseek": "每条优势配'参数名：数值（单位）'标准格式的技术指标，便于RAG检索匹配",
+                "doubao": "每条优势用≤30字先说结论（对客户的好处），再用≤50字给数据支撑",
+                "kimi": "每条优势配合2-3句支撑细节+1个量化数据，形成完整的论证链",
+                "base": "将核心优势以独立段落呈现，确保每条优势有具体数据和案例支撑",
+            },
+            "eeat_score": {
+                "deepseek": "补充技术资质认证编号、第三方检测报告引用、项目验收标准等可验证权威信号",
+                "doubao": "增加客户好评、项目实拍、本地服务承诺等接地气的信任信号",
+                "kimi": "增加资质认证详情（颁发机构+有效期）、行业排名引用、学术论文引用等权威背书",
+                "base": "增加企业年限/项目数量（Experience）、技术工艺深度（Expertise）、资质认证（Authoritativeness）",
+            },
+        }
+
+        # ── 遍历各维度 ──
+        dim_labels = {
+            "brand_recall": "品牌召回率",
+            "solution_match": "方案匹配度",
+            "advantage_citation": "优势采信率",
+            "structure_quality": "结构化程度",
+            "differentiation": "差异化程度",
+            "real_citation": "真实采信率",
+            "source_consistency": "信源一致性",
+            "eeat_score": "E-E-A-T权威度",
         }
 
         has_weakness = False
-        for key, (label, weak_msg, suggest_msg) in thresholds.items():
+        for key, label in dim_labels.items():
             score = scores.get(key, 100)
-            if score < 60:
+            threshold = _thresholds.get(key, 60)
+            if score < threshold:
                 has_weakness = True
-                weak_points.append(f"{label}偏低（{score}分）：{weak_msg}")
-                suggestions.append(suggest_msg)
+                # 优先使用平台专属建议，否则用通用建议
+                platform_suggestions = _suggestions.get(key, {})
+                suggest = platform_suggestions.get(platform, platform_suggestions.get("base", f"建议提升{label}"))
+                weak_points.append(f"{label}偏低（{score}分，及格线{threshold}分）")
+                suggestions.append(f"[{platform}] {suggest}")
+
+        # ── 诊断器交叉引用 ──
+        cross_ref = _cross_ref_diagnosis(diagnosis_result, scores)
+        if cross_ref:
+            if cross_ref.get("confirmed"):
+                for item in cross_ref["confirmed"]:
+                    weak_points.append(f"🔗 诊断器交叉确认: {item}")
+            if cross_ref.get("contradictions"):
+                for item in cross_ref["contradictions"]:
+                    weak_points.append(f"⚠ 诊断器与评测结果矛盾: {item}")
 
         if not has_weakness:
             weak_points.append("各项指标表现良好，暂无明显短板")
-            suggestions.append("建议：持续监控AI平台算法更新，定期迭代优化文案")
+            suggestions.append(f"[{platform}] 持续监控AI平台算法更新，定期迭代优化文案")
 
-        # 信源一致性严重警告
+        # ── 信源一致性严重警告 ──
         source_score = scores.get("source_consistency", 100)
-        if source_score < 30:
-            weak_points.insert(0, f"信源一致性严重偏低（{source_score}分）：优化后的文案中包含大量信源数据中不存在的信息，存在AI编造风险，当前评测得分的参考价值有限")
-            suggestions.insert(0, "建议：返回GEO工坊重新优化，在优化前确保五维信息已完整提取，并检查原始文案中是否包含足够的技术参数和案例数据")
+        if source_score is not None and source_score < 30:
+            weak_points.insert(0,
+                f"🚨 信源一致性严重偏低（{source_score}分）：优化后文案包含大量信源数据中不存在的信息，"
+                "存在AI编造风险，当前评测得分的参考价值有限"
+            )
+            suggestions.insert(0,
+                f"[{platform}] 返回GEO工坊重新优化，确保五维信息完整准确，"
+                "不要编造量化数据/客户案例/认证证书"
+            )
+
+        # ── 平台特有问题 ──
+        if platform == "doubao":
+            if scores.get("structure_quality", 100) < 70:
+                suggestions.append("[豆包专属] 确认全文80%以上句子≤30字，避免任何营销腔表述")
+        elif platform == "deepseek":
+            if scores.get("structure_quality", 100) < 70:
+                suggestions.append("[DeepSeek专属] 确认FAQs≥5组，所有技术参数使用'参数名：数值（单位）'格式")
+        elif platform == "kimi":
+            brand_score = scores.get("brand_recall", 100)
+            if brand_score < 70:
+                suggestions.append("[Kimi专属] 品牌名全文至少出现5次，数据不可泛化（'多年'→具体年数）")
 
         return weak_points, suggestions
+
+
+def _cross_ref_diagnosis(diagnosis_result: dict | None, eval_scores: dict) -> dict | None:
+    """将诊断器结果与评测结果交叉引用，发现一致性和矛盾"""
+    if not diagnosis_result:
+        return None
+
+    dims = diagnosis_result.get("dimensions", {})
+    if not dims:
+        return None
+
+    confirmed = []
+    contradictions = []
+
+    # 映射：诊断器维度 → 评测引擎维度
+    mapping = {
+        "entity_completeness": "brand_recall",
+        "structure_quality": "structure_quality",
+        "quantified_data": "differentiation",
+        "faq_friendliness": "real_citation",
+        "source_credibility": "source_consistency",
+    }
+
+    for diag_key, eval_key in mapping.items():
+        diag_dim = dims.get(diag_key, {})
+        diag_score = diag_dim.get("score", 100)
+        eval_score = eval_scores.get(eval_key, 100)
+
+        if diag_score < 60 and eval_score < 60:
+            confirmed.append(
+                f"{diag_key}: 诊断器({diag_score}分)和评测引擎({eval_score}分)一致认为偏低 — "
+                f"{diag_dim.get('note', '')}"
+            )
+        elif diag_score < 40 and eval_score > 70:
+            contradictions.append(
+                f"{diag_key}: 诊断器评分低({diag_score}分)但评测引擎评分高({eval_score}分)，"
+                "可能存在规则诊断遗漏或LLM评测偏差，建议人工复核"
+            )
+        elif diag_score > 70 and eval_score < 40:
+            contradictions.append(
+                f"{diag_key}: 诊断器评分高({diag_score}分)但评测引擎评分低({eval_score}分)，"
+                "LLM评测可能检测到了规则诊断无法覆盖的深层问题"
+            )
+
+    return {
+        "confirmed": confirmed,
+        "contradictions": contradictions,
+        "diagnosis_overall": diagnosis_result.get("overall_score", "N/A"),
+    }

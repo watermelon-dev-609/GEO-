@@ -64,7 +64,8 @@ _setup_logging()
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import cleaning, geo_rewrite, jsonld, evaluation, reports
-from app.api import analytics, diagnosis, platform_monitor, keywords, competitors, templates
+from app.api import analytics, diagnosis, platform_monitor, keywords, competitors, templates, brand_monitor
+from app.api import batch, auth, usage, logs, audit, compliance_api, scheduler_api, versions, seo
 from app.models.schemas import SystemConfigResponse, LLMConfigStatus, LLMConfigUpdateRequest
 from app.models.enums import AIPlatform
 from app.utils.config import load_settings, load_api_keys, get_data_dir
@@ -75,7 +76,7 @@ from app.utils.config import get_enterprise_name as _ent_name
 app = FastAPI(
     title="GEO生成式搜索优化系统",
     description=f"{_ent_name()} - 轻量化GEO优化平台",
-    version="1.0.0-personal",
+    version="2.0.0-personal",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -87,6 +88,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 审计日志中间件（纯ASGI，不影响SSE流式响应）
+from app.core.audit_logger import AuditLogMiddleware
+app.add_middleware(AuditLogMiddleware)
 
 # ── 注册路由 ──
 
@@ -101,7 +106,34 @@ app.include_router(platform_monitor.router, prefix="/api/platform-monitor", tags
 app.include_router(keywords.router, prefix="/api/keywords", tags=["关键词库"])
 app.include_router(competitors.router, prefix="/api/competitors", tags=["竞品调研"])
 app.include_router(templates.router, prefix="/api/templates", tags=["内容模板"])
+app.include_router(brand_monitor.router, prefix="/api/brand-monitor", tags=["品牌收录监测"])
 app.include_router(analytics.router, prefix="/api/samples", tags=["示例数据"])
+
+# ── Phase 1 新增路由 ──
+app.include_router(batch.router, prefix="/api/batch", tags=["批量处理"])
+app.include_router(auth.router, prefix="/api/auth", tags=["鉴权"])
+app.include_router(usage.router, prefix="/api/usage", tags=["用量监控"])
+app.include_router(logs.router, prefix="/api/logs", tags=["系统日志"])
+app.include_router(audit.router, prefix="/api/audit", tags=["审计日志"])
+app.include_router(compliance_api.router, prefix="/api/compliance", tags=["合规检测"])
+app.include_router(scheduler_api.router, prefix="/api/scheduler", tags=["定时任务"])
+app.include_router(versions.router, prefix="/api/versions", tags=["版本管理"])
+app.include_router(seo.router, prefix="/api/seo", tags=["SEO集成"])
+
+# ── Phase 2: 模板引擎 ──
+from app.api import template_engine
+app.include_router(template_engine.router, prefix="/api/templates/engine", tags=["模板引擎"])
+
+# ── Phase 3+4: 适配流水线 + 数据闭环 ──
+from app.api import adaptation, feedback
+app.include_router(adaptation.router, prefix="/api/adaptation", tags=["适配流水线"])
+app.include_router(feedback.router, prefix="/api/feedback", tags=["数据闭环"])
+
+# ── Phase 5: 流量与转化追踪 ──
+from app.api import traffic, utm, conversions as conv_api
+app.include_router(traffic.router, prefix="/api/traffic", tags=["流量分析"])
+app.include_router(utm.router, prefix="/api/utm", tags=["UTM追踪"])
+app.include_router(conv_api.router, prefix="/api/conversions", tags=["转化归因"])
 
 # 确保数据目录存在
 get_data_dir()
@@ -111,6 +143,20 @@ get_data_dir()
 (BACKEND_DIR / "data" / "competitors").mkdir(parents=True, exist_ok=True)
 (BACKEND_DIR / "data" / "keywords").mkdir(parents=True, exist_ok=True)
 (BACKEND_DIR / "data" / "templates").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "brand_mentions" / "sessions").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "usage").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "audit").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "versions").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "rss_monitor").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "citation_tests").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "structure_reports").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "platform_templates").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "template_versions").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "adaptation_runs").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "feedback_metrics").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "traffic").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "conversions").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "utm_campaigns").mkdir(parents=True, exist_ok=True)
 
 
 # ── 启动事件 ──
@@ -147,6 +193,19 @@ async def startup_load_history():
 
 
 @app.on_event("startup")
+async def startup_init_scheduler():
+    """启动定时任务调度器"""
+    import logging
+    sched_logger = logging.getLogger(__name__)
+    try:
+        from app.core.scheduler import _ensure_running
+        _ensure_running()
+        sched_logger.info("定时任务调度器已启动")
+    except Exception as e:
+        sched_logger.warning(f"定时任务调度器启动失败: {e}")
+
+
+@app.on_event("startup")
 async def startup_init_platform_rules():
     """启动时初始化平台规则数据"""
     import logging
@@ -162,6 +221,32 @@ async def startup_init_platform_rules():
         plat_logger.warning(f"平台规则初始化失败: {e}")
 
 
+@app.on_event("startup")
+async def startup_watchdog():
+    """启动文件系统监控（watchdog），实时监听YAML模板变更"""
+    import logging
+    wd_logger = logging.getLogger(__name__)
+    try:
+        from app.core.template_watcher import start_watcher
+        ok = start_watcher()
+        if ok:
+            wd_logger.info("Watchdog 文件监控已启动")
+        else:
+            wd_logger.info("Watchdog 未启动（可能被禁用或库未安装），使用 TTL 轮询模式")
+    except Exception as e:
+        wd_logger.warning(f"Watchdog 启动失败: {e}，回退到 TTL 轮询模式")
+
+
+@app.on_event("shutdown")
+async def shutdown_watchdog():
+    """停止文件系统监控"""
+    try:
+        from app.core.template_watcher import stop_watcher
+        stop_watcher()
+    except Exception:
+        pass
+
+
 # ── 系统接口 ──
 
 @app.get("/api/health")
@@ -169,7 +254,7 @@ async def health_check():
     from app.services.embedding_svc import _embedding_model
     return {
         "status": "ok",
-        "version": "1.0.0-personal",
+        "version": "2.0.0-personal",
         "embedding_model_loaded": _embedding_model is not None,
     }
 
@@ -196,7 +281,10 @@ async def get_llm_config():
         llm_platforms=platforms_status,
         embedding_model=settings.get("embedding", {}).get("model_name", ""),
         data_dir=str(settings.get("system", {}).get("data_dir", "./data")),
-        version="1.0.0-personal",
+        version="2.0.0-personal",
+        enterprise_name=settings.get("system", {}).get("enterprise_name", ""),
+        enterprise_location=settings.get("system", {}).get("enterprise_location", ""),
+        enterprise_website=settings.get("system", {}).get("enterprise_website", ""),
     ).model_dump()
 
 
@@ -209,6 +297,8 @@ KEY_PATTERNS = {
     "wenxin": {"api_key": r"^[a-zA-Z0-9]{16,}$", "secret_key": r"^[a-zA-Z0-9]{16,}$"},
     "kimi": {"api_key": r"^sk-[a-zA-Z0-9]{28,}$"},
     "xinghuo": {"api_key": r"^[a-zA-Z0-9_-]{20,}$"},
+    "claude": {"api_key": r"^sk-ant-[a-zA-Z0-9_-]{20,}$"},
+    "openai": {"api_key": r"^sk-[a-zA-Z0-9]{28,}$"},
 }
 
 @app.post("/api/config/llm/update")

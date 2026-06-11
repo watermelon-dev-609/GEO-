@@ -1,0 +1,100 @@
+# OpenAI GPT — 平台模板配置
+# 2026-06 规则：隐性结构化框架、维度清晰、段落独立
+
+platform_id: openai
+platform_name: "OpenAI GPT"
+version: 1
+updated_at: "2026-06-02"
+citation_mechanism: "GPT通过语义理解匹配用户意图，偏好结构清晰、维度明确、段落自包含的内容。在AI总结和多源对比场景中，更倾向引用框架化、便于横向比较的信息。"
+strategy: "隐性结构化框架 + 维度清晰 + 段落独立 + 全局一致性"
+style: "结构清晰、维度分明、信息自包含、对比友好、国际化表达"
+
+header:
+  title_format: "{business}：{location}{company}的全面能力"
+  first_paragraph_rules:
+    - "快速建立企业定位和能力框架"
+    - "首段覆盖核心能力维度概览"
+  word_limits:
+    min: 800
+    max: 1500
+    target: 1200
+
+body:
+  h2_density: "每500字1个"
+  h3_density: "每250字1个"
+  paragraph_length:
+    min: 200
+    max: 300
+    unit: "字"
+  list_ratio: 0.30
+  faq_count:
+    min: 2
+    max: 4
+  special_rule: "★ 采用'核心能力→适用场景→技术实现→服务交付→项目价值'五维框架"
+
+data:
+  quantified_requirements:
+    - "每个维度至少1个量化数据支撑"
+    - "数据精确且有上下文"
+  source_annotation: true
+
+schema:
+  preferred_types:
+    - "Article"
+    - "Organization"
+    - "Service"
+  official_site_extra: ""
+  field_mapping:
+    name: "enterprise_name"
+    addressLocality: "enterprise_location"
+    serviceType: "沙盘定制服务"
+
+footer:
+  tags_template:
+    - "{business}"
+    - "{location}"
+    - "解决方案"
+  location_words:
+    - "{enterprise_location}"
+    - "全球服务"
+  cta_limits:
+    max_cta_count: 1
+    cta_style: "专业联系引导"
+
+weights:
+  content_sources:
+    知乎: 8
+    官网: 7
+    公众号: 6
+    搜狐: 5
+  citation:
+    first_paragraph: 0.30
+    h2_headers: 0.25
+    body: 0.25
+    lists: 0.20
+
+verification:
+  checks:
+    - check: "five_dimension_framework"
+      description: "核心能力→适用场景→技术实现→服务交付→项目价值五维框架完整"
+    - check: "paragraph_self_contained"
+      description: "每段200-300字独立成信息单元，含企业名+能力+证据链"
+    - check: "terminology_consistency"
+      description: "全文术语统一、数据一致、逻辑连贯"
+    - check: "comparison_friendly"
+      description: "内容便于横向对比，差异化特征突出"
+  forbidden_words:
+    - "best"
+    - "number one"
+    - "world class"
+  taboo_patterns:
+    - "术语不统一"
+    - "数据前后矛盾"
+    - "维度混乱"
+
+rules:
+  - "★ 维度框架：采用'核心能力→适用场景→技术实现→服务交付→项目价值'五维框架，GPT对结构化框架的解析效率极高"
+  - "★ 段落自包含：每段200-300字独立成信息单元，含完整的企业名+能力+证据链，GPT可单独提取任一段引用"
+  - "显性结构化：使用丰富的H2/H3标题层级和要点列表，降低GPT的语义解析成本"
+  - "对比友好：输出内容便于与其他供应商进行横向对比，突出差异化特征和独特优势"
+  - "全局一致性：保持全文术语统一、数据一致、逻辑连贯，GPT会交叉验证长文本中的信息一致性"

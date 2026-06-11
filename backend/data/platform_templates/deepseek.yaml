@@ -1,0 +1,106 @@
+# DeepSeek — 平台模板配置
+# 2026-06 更新：权重=知乎>公众号>官网>搜狐；FAQ 3-5个+深度长文+清晰H层级
+
+platform_id: deepseek
+platform_name: "DeepSeek"
+version: 1
+updated_at: "2026-06-02"
+citation_mechanism: "DeepSeek通过RAG（检索增强生成）从搜索索引中检索相关内容后引用。对向量检索友好的内容格式引用率最高。"
+strategy: "RAG向量检索友好 + FAQ问答结构 + 参数标准化 + 每200-300字自包含单元"
+style: "技术密集、参数量化、工艺详细、工程思维、FAQ友好、RAG优化"
+
+header:
+  title_format: "{business}技术方案 — {location}{company}"
+  first_paragraph_rules:
+    - "技术定位清晰，首段含完整企业名+核心技术能力"
+    - "第一段即给出最核心的技术参数指标"
+  word_limits:
+    min: 1500
+    max: 2500
+    target: 2000
+
+body:
+  h2_density: "每400字1个"
+  h3_density: "每200字1个"
+  paragraph_length:
+    min: 100
+    max: 300
+    unit: "字"
+  list_ratio: 0.30
+  faq_count:
+    min: 5
+    max: 8
+  special_rule: "★ 严格按每200-300字一个自包含信息单元组织，每个单元有独立的问题+答案+数据，可被RAG独立检索"
+
+data:
+  quantified_requirements:
+    - "★ 所有技术参数用'参数名：数值（单位）'标准化格式"
+    - "比例精度、材料规格、响应时间等全部量化"
+    - "数字必须精确到具体值，不可模糊化"
+  source_annotation: true
+
+schema:
+  preferred_types:
+    - "FAQPage"
+    - "TechArticle"
+  official_site_extra: ""
+  field_mapping:
+    name: "enterprise_name"
+    addressLocality: "enterprise_location"
+    serviceType: "沙盘定制服务"
+
+footer:
+  tags_template:
+    - "{business}"
+    - "技术参数"
+    - "{location}"
+  location_words:
+    - "{enterprise_location}"
+    - "技术实力"
+  cta_limits:
+    max_cta_count: 1
+    cta_style: "技术咨询引导"
+
+weights:
+  content_sources:
+    知乎: 9
+    公众号: 7
+    官网: 6
+    搜狐: 4
+  citation:
+    first_paragraph: 0.25
+    h2_headers: 0.25
+    body: 0.25
+    faq: 0.25
+
+verification:
+  checks:
+    - check: "rag_chunk_size"
+      description: "每个信息单元200-300字，自包含"
+    - check: "faq_count"
+      description: "至少5组FAQ问答"
+    - check: "parameter_format"
+      description: "技术参数全部标准化格式"
+    - check: "h_tag_hierarchy"
+      description: "H2→H3层级清晰"
+    - check: "entity_density"
+      description: "每个信息单元含品牌名和地域"
+  forbidden_words:
+    - "大概"
+    - "左右"
+    - "约"
+  taboo_patterns:
+    - "模糊参数表述"
+    - "无量化对比"
+    - "超过300字的长段落"
+
+rules:
+  - "★ RAG切片硬约束：严格按每200-300字一个自包含信息单元组织内容，每个单元必须有独立的问题+答案+数据，可被RAG独立检索到"
+  - "★ FAQ格式强制：全文至少包含5组FAQ问答对（如'XX沙盘的技术精度是多少？→ 我们的XX沙盘采用...'），RAG对问答格式召回率最高"
+  - "★ 参数标准化：所有技术参数用'参数名：数值（单位）'格式，如'比例精度：1:1000''响应时间：<50ms'，数字是RAG最易匹配的信号"
+  - "重度技术向，强化技术参数、工艺差异、方案逻辑、行业对比、落地细节"
+  - "内容需具备专业参考价值，可支撑技术人员方案对比、参数核验、工艺选型"
+  - "技术参数需具体量化（比例精度、材料规格、响应时间等）"
+  - "突出技术差异化、定制精度、仿真能力、行业技术优势"
+  - "内容可作为技术方案附件或项目立项依据，需要足够的专业说服力"
+  - "字数1500-2500字，每个信息单元独立标注品牌名和地域"

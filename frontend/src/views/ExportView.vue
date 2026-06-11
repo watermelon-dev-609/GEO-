@@ -18,6 +18,8 @@
                 <el-checkbox label="keywords">关键词清单 (.csv)</el-checkbox>
                 <el-checkbox label="standards">内容规范文档 (.md)</el-checkbox>
                 <el-checkbox label="competitors">竞品调研报告 (.md)</el-checkbox>
+                <el-divider style="margin:8px 0;" />
+                <el-checkbox label="comparison">优化前后对比报告 (.md)</el-checkbox>
               </el-checkbox-group>
             </el-form-item>
 
@@ -151,13 +153,14 @@ import { ref, computed } from 'vue'
 import { useGeoStore } from '../stores/geo'
 import { generateJSONLD, generateReport, previewReport, exportKeywordsCSV, generateCompetitorReport } from '../api'
 import { ElMessage } from 'element-plus'
+import { Download, View } from '@element-plus/icons-vue'
 import { SANDTABLE_TYPES, scoreColor } from '../constants'
 
 const store = useGeoStore()
 
 const exportItems = ref(['copy', 'jsonld', 'report'])
 const sandtableType = ref(store.currentSandtableType || 'smart_traffic')
-const enterpriseName = ref('武汉微艺达智能科技有限公司')
+const enterpriseName = ref(store.enterpriseName || '')
 const enterpriseUrl = ref('')
 const isExporting = ref(false)
 const exportedFiles = ref([])
@@ -199,7 +202,7 @@ async function startExport() {
           enterprise_info: {
             name: enterpriseName.value,
             url: enterpriseUrl.value,
-            location: '武汉',
+            location: store.enterpriseLocation || '',
           },
           product_info: {
             name: sandtableTypes.find(t => t.value === sandtableType.value)?.label || '',
@@ -218,28 +221,33 @@ async function startExport() {
 
     // 3. 评测报告
     if ((exportItems.value.includes('report') || exportItems.value.includes('report_pdf')) && store.evaluationResult) {
-      try {
-        const format = exportItems.value.includes('report_pdf') ? 'pdf' : 'html'
-        const reportData = {
-          ...store.evaluationResult,
-          format,
-          include_charts: true,
+      const reportFormats = []
+      if (exportItems.value.includes('report')) reportFormats.push('html')
+      if (exportItems.value.includes('report_pdf')) reportFormats.push('pdf')
+
+      for (const format of reportFormats) {
+        try {
+          const reportData = {
+            ...store.evaluationResult,
+            format,
+            include_charts: true,
+          }
+          const res = await generateReport(reportData)
+          const ext = format === 'pdf' ? 'pdf' : 'html'
+          const filename = `GEO评测报告_${res.data.report_id}.${ext}`
+          exportedFiles.value.push({
+            name: filename,
+            label: `评测报告 (${format.toUpperCase()})`,
+            type: 'report',
+            reportId: res.data.report_id,
+            format,
+            preview: format === 'html',
+          })
+        } catch (e) {
+          ElMessage.warning('报告生成失败 (' + format.toUpperCase() + '): ' + (e.response?.data?.detail || e.message))
         }
-        const res = await generateReport(reportData)
-        const ext = format === 'pdf' ? 'pdf' : 'html'
-        const filename = `GEO评测报告_${res.data.report_id}.${ext}`
-        exportedFiles.value.push({
-          name: filename,
-          label: `评测报告 (${format.toUpperCase()})`,
-          type: 'report',
-          reportId: res.data.report_id,
-          format,
-          preview: format === 'html',
-        })
-        ElMessage.success('报表已生成，可在后端 data/reports/ 目录查看')
-      } catch (e) {
-        ElMessage.warning('报告生成失败: ' + (e.response?.data?.detail || e.message))
       }
+      if (reportFormats.length > 0) ElMessage.success('报表已生成，可在后端 data/reports/ 目录查看')
     }
 
     // 4. 关键词清单
@@ -257,9 +265,8 @@ async function startExport() {
     // 5. 内容规范文档
     if (exportItems.value.includes('standards')) {
       try {
-        let content = '# GEO内容规范文档\n\n## 审核标准\n\n'
-        content += '### AI采信六原则\n\n1. 实体锚定：企业名、地域、产品名完整清晰\n2. 定义优先：专业概念给出权威定义\n3. 量化事实：所有能力用数字支撑\n4. FAQ结构：嵌入自然问答对\n5. 层级结构化：H2/H3+列表\n6. 信息增量：本地化细节+行业独特信息\n\n'
-        content += '### 写作规范\n\n- 每段200-300字，包含一个可独立提取的信息点\n- 标题使用H2/H3层级，列表使用•或-\n- 量化数据优先于形容词\n- 品牌名首次出现必须完整\n- 地域标识必须出现至少2次\n'
+        const en = enterpriseName.value || '企业'
+        let content = `# GEO内容规范文档（系统内置方法论参考）\n\n> 基于AI采信六原则的生成式搜索优化方法论（系统内置参考框架，发布前请人工审核）\n\n## AI采信六原则\n\n1. 实体锚定 — 企业名、地域、产品名完整清晰\n2. 定义优先 — 专业概念给出明确定义\n3. 量化事实 — 能力用可验证的数据支撑\n4. FAQ结构 — 嵌入自然问答对，适配对话式检索\n5. 层级结构化 — 合理使用标题层级和列表\n6. 信息增量 — 本地化细节和行业独特信息\n\n## 应用说明\n\n本规范为${en}在AI生成式搜索平台中的内容优化参考框架。\n具体写作参数（段落长度、标题层级、量化密度等）需根据实际内容类型和目标平台调整。\n`
         const blob = new Blob([content], { type: 'text/markdown;charset=utf-8;' })
         const filename = 'GEO内容规范.md'
         saveBlob(blob, filename)
@@ -278,9 +285,68 @@ async function startExport() {
       } catch (e) { ElMessage.warning('竞品报告导出失败: ' + (e.response?.data?.detail || e.message)) }
     }
 
+    // 7. 优化前后对比报告
+    if (exportItems.value.includes('comparison')) {
+      const date = new Date().toISOString().slice(0, 10)
+      const type = sandtableTypes.find(t => t.value === sandtableType.value)?.label || sandtableType.value
+      let report = `# ${type} — GEO优化前后对比报告\n\n> 生成日期: ${date} | 企业: ${enterpriseName.value}\n\n`
+
+      // 原始文案
+      if (store.originalText) {
+        report += `## 原始文案\n\n${store.originalText}\n\n`
+        report += `---\n\n`
+      }
+      // 清洗后文案
+      if (store.cleanedText) {
+        const before = store.originalText?.length || 0
+        const after = store.cleanedText.length
+        const pct = before ? Math.round((1 - after / before) * 100) : 0
+        report += `## 清洗后文案 (精简${pct}%: ${before}字 -> ${after}字)\n\n${store.cleanedText}\n\n`
+        report += `---\n\n`
+      }
+      // 各平台优化结果
+      if (store.rewriteResults.length > 0) {
+        report += `## 各平台GEO优化结果\n\n`
+        for (const r of store.rewriteResults) {
+          if (r.optimized_text) {
+            report += `### ${r.platform}\n\n${r.optimized_text}\n\n`
+            if (r.strategy_notes) {
+              report += `> 优化策略: ${r.strategy_notes.substring(0, 120)}\n\n`
+            }
+            report += `---\n\n`
+          }
+        }
+      }
+      // 评测得分
+      if (store.evaluationResult) {
+        const ev = store.evaluationResult
+        report += `## AI评测结果\n\n`
+        report += `**综合评分**: ${ev.overall_score || '-'} / 100\n\n`
+        if (ev.platform_results) {
+          for (const pr of ev.platform_results) {
+            report += `### ${pr.platform}: ${pr.overall_score}/100\n\n`
+            for (const s of (pr.scores || [])) {
+              report += `- ${s.dimension}: ${s.score}分\n`
+            }
+          }
+        }
+        if (ev.weak_points?.length) {
+          report += `\n### 短板诊断\n\n${ev.weak_points.map(w => `- ${w}`).join('\n')}\n`
+        }
+        if (ev.suggestions?.length) {
+          report += `\n### 优化建议\n\n${ev.suggestions.map(s => `- ${s}`).join('\n')}\n`
+        }
+      }
+
+      const blob = new Blob([report], { type: 'text/markdown;charset=utf-8' })
+      const filename = `${type}_优化前后对比报告_${date}.md`
+      saveBlob(blob, filename)
+      exportedFiles.value.push({ name: filename, label: '对比报告', type: 'copy', size: `${(blob.size / 1024).toFixed(1)} KB` })
+    }
+
     ElMessage.success(`导出完成！共 ${exportedFiles.value.length} 个文件`)
   } catch (e) {
-    ElMessage.error('导出失败')
+    ElMessage.error('导出失败: ' + (e.response?.data?.detail || e.message))
   } finally {
     isExporting.value = false
   }
@@ -301,36 +367,52 @@ async function previewReportInline() {
     })
     previewHtml.value = res.data.html
   } catch (e) {
-    ElMessage.error('报告预览生成失败')
+    ElMessage.error('报告预览生成失败: ' + (e.response?.data?.detail || e.message))
     previewDialogVisible.value = false
   } finally {
     previewLoading.value = false
   }
 }
 
-async function exportAllZip() {
-  ElMessage.info('打包功能：请将导出的文件手动打包为ZIP，或使用后端批量导出接口')
-}
-
-function previewFile(file) {
+async function previewFile(file) {
   if (file.type === 'jsonld') {
     showJSONLDPreview.value = true
     showReportPreview.value = false
   } else if (file.type === 'report' && file.reportId) {
-    showReportPreview.value = true
-    showJSONLDPreview.value = false
+    previewDialogVisible.value = true
+    previewLoading.value = true
+    try {
+      const url = `/api/reports/export/${file.reportId}?format=${file.format || 'html'}`
+      const resp = await fetch(url)
+      if (!resp.ok) {
+        ElMessage.error(`加载报告失败 (${resp.status})`)
+        previewDialogVisible.value = false
+        return
+      }
+      previewHtml.value = await resp.text()
+    } catch (e) {
+      ElMessage.error('加载报告失败: ' + (e.message || '网络错误'))
+      previewDialogVisible.value = false
+    } finally {
+      previewLoading.value = false
+    }
   }
 }
 
-function downloadFile(file) {
+async function downloadFile(file) {
   if (file.type === 'report' && file.reportId) {
     const url = `/api/reports/export/${file.reportId}?format=${file.format || 'html'}`
-    const a = document.createElement('a')
-    a.href = url
-    a.download = file.name || `report.${file.format || 'html'}`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    try {
+      const resp = await fetch(url)
+      if (!resp.ok) {
+        ElMessage.error(`报告下载失败 (${resp.status}): 文件可能已被清理`)
+        return
+      }
+      const blob = await resp.blob()
+      saveBlob(blob, file.name || `report.${file.format || 'html'}`)
+    } catch (e) {
+      ElMessage.error('报告下载失败: ' + (e.message || '网络错误'))
+    }
     return
   }
   // 对于 copy 和 jsonld 类型，重新生成 blob 并触发下载

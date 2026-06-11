@@ -15,10 +15,14 @@ from app.services.llm.base import LLMResponse
 
 def _make_evaluator(llm_adapter=None):
     """Instantiate AIEvaluator with all heavy constructor dependencies mocked out."""
+    import tempfile
+    from pathlib import Path
+    tmp_dir = Path(tempfile.mkdtemp(prefix="eval_test_"))
     with patch("app.core.evaluator.load_settings", return_value={}), \
          patch("app.core.evaluator.load_api_keys", return_value={}), \
          patch("app.core.evaluator.EmbeddingService", autospec=True), \
-         patch("app.core.evaluator.VectorStore", autospec=True):
+         patch("app.core.evaluator.VectorStore", autospec=True), \
+         patch("app.utils.config.get_data_dir", return_value=tmp_dir):
         from app.core.evaluator import AIEvaluator
         return AIEvaluator(llm_adapter=llm_adapter)
 
@@ -48,11 +52,14 @@ class TestExtractScore:
     def test_slash_100_format(self):
         assert self.evaluator._extract_score("65/100") == 65.0
 
-    def test_no_score_text_returns_default(self):
-        assert self.evaluator._extract_score("这是一段没有任何评分的普通文本") == 60.0
+    def test_no_score_text_returns_none(self):
+        # When no score pattern matches, _extract_score now returns None
+        result = self.evaluator._extract_score("这是一段没有任何评分的普通文本")
+        assert result is None
 
-    def test_empty_string_returns_default(self):
-        assert self.evaluator._extract_score("") == 60.0
+    def test_empty_string_returns_none(self):
+        result = self.evaluator._extract_score("")
+        assert result is None
 
     def test_score_embedded_in_long_text(self):
         text = "综合来看，该文本在结构化程度方面表现良好。评分：88。其他方面也有不错的表现。"
@@ -65,6 +72,15 @@ class TestAnalyzeCitation:
 
     def setup_method(self):
         self.evaluator = _make_evaluator()
+        self._brand_patch = patch(
+            "app.core.evaluator.get_brand_variants",
+            return_value=["武汉微艺达智能科技有限公司", "微艺达", "武汉微艺达"]
+        )
+        self._brand_patch.start()
+
+    def teardown_method(self):
+        if hasattr(self, '_brand_patch'):
+            self._brand_patch.stop()
 
     def test_answer_contains_source_entities(self):
         source = (
@@ -253,8 +269,10 @@ class TestCalculateOverallV2:
             "advantage_citation": 90,
         }
         score = self.evaluator._calculate_overall_v2(components)
-        # 3 dims with 8-dim weights: 70*0.18 + 80*0.18 + 90*0.14 = 39.6
-        assert 39 <= score <= 40
+        # Weights normalized across only present dimensions
+        # Total weight of 3 dims = brand_recall(20) + solution_match(20) + advantage_citation(15) = 55
+        # Normalized: 70*(20/55) + 80*(20/55) + 90*(15/55) = 25.45 + 29.09 + 24.55 = 79.09
+        assert 78 <= score <= 81
 
     def test_source_consistency_below_30_capped_at_50(self):
         components = {

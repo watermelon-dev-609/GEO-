@@ -13,6 +13,64 @@ from app.models.schemas import PlatformRewriteResult
 from app.services.llm.base import BaseLLMAdapter, LLMMessage, LLMFactory
 from app.prompts.rewrite import build_geo_prompt, get_sandtable_profile, get_platform_rules
 from app.utils.retry import async_retry
+
+
+def _get_platform_max_tokens(platform: AIPlatform) -> int:
+    """根据平台字数目标计算 max_tokens（输出截断控制）
+
+    中文约1.5 token/字，按字数上限×1.8 留安全余量。
+    这是硬截断——LLM 输出达到此长度会自动停止。
+    """
+    limits = {
+        AIPlatform.DEEPSEEK: 4000,   # 2200字×1.8≈3960
+        AIPlatform.KIMI: 4000,       # 2200字×1.8≈3960
+        AIPlatform.CLAUDE: 4500,     # 2500字×1.8=4500
+        AIPlatform.DOUBAO: 2200,     # 1200字×1.8≈2160
+        AIPlatform.WENXIN: 2700,     # 1500字×1.8=2700
+        AIPlatform.TONGYI: 2700,
+        AIPlatform.XINGHUO: 2700,
+        AIPlatform.YUANBAO: 2700,
+        AIPlatform.OPENAI: 4096,     # 通用
+        AIPlatform.OLLAMA: 4096,
+        AIPlatform.LMSTUDIO: 4096,
+    }
+    return limits.get(platform, 4096)
+
+
+def _get_platform_max_chars(platform: AIPlatform) -> int:
+    """平台字数硬上限（用于输出截断兜底）"""
+    limits = {
+        AIPlatform.DEEPSEEK: 2300,
+        AIPlatform.KIMI: 2300,
+        AIPlatform.CLAUDE: 2600,
+        AIPlatform.DOUBAO: 1300,
+        AIPlatform.WENXIN: 1600,
+        AIPlatform.TONGYI: 1600,
+        AIPlatform.XINGHUO: 1600,
+        AIPlatform.YUANBAO: 1600,
+    }
+    return limits.get(platform, 2000)
+
+
+def _truncate_to_platform_limit(text: str, platform: AIPlatform) -> str:
+    """字数超限时在最近的段落/句子边界截断"""
+    max_chars = _get_platform_max_chars(platform)
+    if len(text) <= max_chars:
+        return text
+
+    # 尝试在段落边界截断（\n\n）
+    truncated = text[:max_chars]
+    last_para = truncated.rfind('\n\n')
+    if last_para > max_chars * 0.7:  # 段落边界在70%位置之后才用
+        return truncated[:last_para].rstrip()
+
+    # 尝试在句子边界截断（。！？）
+    for punct in ['。', '！', '？']:
+        last_sent = truncated.rfind(punct)
+        if last_sent > max_chars * 0.6:
+            return truncated[:last_sent + 1]
+
+    return truncated.rstrip()
 from app.utils.cache import geo_cache
 from app.utils.config import load_settings, load_api_keys, get_enterprise_name, get_enterprise_location
 
@@ -61,13 +119,14 @@ class GEORewriter:
         dimensions: dict | None = None,
         optimization_hints: list[str] | None = None,
         competitor_insights: str | None = None,
+        optimization_rules: dict | None = None,
         enterprise_name: str | None = None,
         enterprise_location: str | None = None,
     ) -> list[PlatformRewriteResult]:
         """批量重构：对多个平台并行生成优化文案"""
-        if enterprise_name is None:
+        if not enterprise_name:
             enterprise_name = get_enterprise_name()
-        if enterprise_location is None:
+        if not enterprise_location:
             enterprise_location = get_enterprise_location()
         start = time.perf_counter()
         tasks = []
@@ -85,6 +144,7 @@ class GEORewriter:
                 tasks.append(self._rewrite_one(
                     cleaned_text, sandtable_type, platform,
                     dimensions, optimization_hints, competitor_insights,
+                    optimization_rules,
                     enterprise_name, enterprise_location, cache_key,
                 ))
 
@@ -99,6 +159,7 @@ class GEORewriter:
                     optimized_text="",
                     strategy_notes=f"生成失败: {str(result)}",
                     word_count=0,
+                    error=str(result),
                 ))
             else:
                 output.append(result)
@@ -113,6 +174,7 @@ class GEORewriter:
         dimensions: dict | None,
         optimization_hints: list[str] | None,
         competitor_insights: str | None,
+        optimization_rules: dict | None,
         enterprise_name: str,
         enterprise_location: str,
         cache_key: str,
@@ -126,6 +188,7 @@ class GEORewriter:
                 optimized_text="",
                 strategy_notes=str(e),
                 word_count=0,
+                error=str(e),
             )
 
         system_prompt, user_message = build_geo_prompt(
@@ -136,6 +199,7 @@ class GEORewriter:
             dimensions=dimensions,
             optimization_hints=optimization_hints,
             competitor_insights=competitor_insights,
+            optimization_rules=optimization_rules,
         )
 
         # 五维信息也补充到user_message中
@@ -152,7 +216,8 @@ class GEORewriter:
             LLMMessage(role="user", content=full_user),
         ]
 
-        resp = await async_retry(adapter.chat, messages, temperature=0.7, max_tokens=4096)
+        max_tokens = _get_platform_max_tokens(platform)
+        resp = await async_retry(adapter.chat, messages, temperature=0.7, max_tokens=max_tokens)
 
         # 后处理校验
         validated_text, warnings = self._validate_output(
@@ -183,13 +248,14 @@ class GEORewriter:
         dimensions: dict | None = None,
         optimization_hints: list[str] | None = None,
         competitor_insights: str | None = None,
+        optimization_rules: dict | None = None,
         enterprise_name: str | None = None,
         enterprise_location: str | None = None,
     ) -> AsyncIterator[dict]:
         """流式生成单平台文案（SSE）"""
-        if enterprise_name is None:
+        if not enterprise_name:
             enterprise_name = get_enterprise_name()
-        if enterprise_location is None:
+        if not enterprise_location:
             enterprise_location = get_enterprise_location()
         adapter = self._get_adapter(platform)
 
@@ -201,6 +267,7 @@ class GEORewriter:
             dimensions=dimensions,
             optimization_hints=optimization_hints,
             competitor_insights=competitor_insights,
+            optimization_rules=optimization_rules,
         )
 
         dims_text = ""
@@ -231,7 +298,8 @@ class GEORewriter:
 
         # 流式输出正文
         full_text = ""
-        async for token in adapter.stream_chat(messages, temperature=0.7, max_tokens=4096):
+        max_tokens = _get_platform_max_tokens(platform)
+        async for token in adapter.stream_chat(messages, temperature=0.7, max_tokens=max_tokens):
             full_text += token
             yield {"type": "token", "content": token}
 
@@ -260,7 +328,8 @@ class GEORewriter:
         """自动加载最新竞品对比摘要作为差异化洞察"""
         import json
         from pathlib import Path
-        comp_dir = Path("data/competitors")
+        from app.utils.config import get_data_dir
+        comp_dir = get_data_dir() / "competitors"
         if not comp_dir.exists():
             return None
         comp_files = sorted(comp_dir.glob("*.json"))
@@ -289,7 +358,7 @@ class GEORewriter:
         sandtable_type: SandtableType,
         platform: AIPlatform,
         enterprise_name: str,
-        enterprise_location: str = "武汉",
+        enterprise_location: str = "",
     ) -> tuple[str, list[str]]:
         """输出校验 — 检查关键信息完整性，不达标自动补充
 
@@ -324,15 +393,9 @@ class GEORewriter:
             warnings.append("文中未检测到量化数据（数字+单位），AI引用算法对数字信号敏感度更高")
 
         # 校验项4：五维信息是否全覆盖
-        dim_keywords = {
-            "核心优势": ["优势", "领先", "能力", "特点", "差异化"],
-            "适用场景": ["场景", "适用", "应用", "用途", "用于"],
-            "技术特点": ["技术", "工艺", "参数", "精度", "系统"],
-            "服务能力": ["服务", "流程", "交付", "售后", "响应"],
-            "落地价值": ["案例", "项目", "落地", "客户", "实施"],
-        }
+        from app.core.dimensions_shared import DIMENSION_COVERAGE_KEYWORDS
         missing = []
-        for dim, keywords in dim_keywords.items():
+        for dim, keywords in DIMENSION_COVERAGE_KEYWORDS.items():
             if not any(kw in text for kw in keywords):
                 missing.append(dim)
         if missing:
@@ -340,6 +403,9 @@ class GEORewriter:
 
         if warnings:
             logger.warning(f"[{sandtable_type.label} × {platform.label}] 输出校验警告: {'; '.join(warnings)}")
+
+        # 校验项5：字数上限硬截断（LLM 经常忽略 prompt 中的字数约束，此处兜底）
+        text = _truncate_to_platform_limit(text, platform)
 
         return text, warnings
 

@@ -5,7 +5,7 @@
         <span class="logo-icon">🎯</span>
         <div class="logo-text">
           <div class="logo-title">GEO优化系统</div>
-          <div class="logo-sub">武汉微艺达智能科技</div>
+          <div class="logo-sub">{{ store.enterpriseName || '未配置企业名称' }}</div>
         </div>
       </div>
 
@@ -45,6 +45,45 @@
           <el-icon><Document /></el-icon>
           <span>内容规范</span>
         </el-menu-item>
+        <el-menu-item index="/batch">
+          <el-icon><FolderOpened /></el-icon>
+          <span>批量处理</span>
+        </el-menu-item>
+        <div class="menu-divider">监测</div>
+        <el-menu-item index="/brand-monitor">
+          <el-icon><Monitor /></el-icon>
+          <span>AI收录监测</span>
+        </el-menu-item>
+        <div class="menu-divider">转化追踪</div>
+        <el-menu-item index="/full-funnel">
+          <el-icon><TrendCharts /></el-icon>
+          <span>全域转化漏斗</span>
+        </el-menu-item>
+        <el-menu-item index="/conversion-attribution">
+          <el-icon><PieChart /></el-icon>
+          <span>转化归因</span>
+        </el-menu-item>
+        <el-menu-item index="/utm-campaigns">
+          <el-icon><Link /></el-icon>
+          <span>UTM追踪</span>
+        </el-menu-item>
+        <div class="menu-divider">系统</div>
+        <el-menu-item index="/scheduler">
+          <el-icon><Timer /></el-icon>
+          <span>定时任务</span>
+        </el-menu-item>
+        <el-menu-item index="/logs">
+          <el-icon><Setting /></el-icon>
+          <span>系统日志</span>
+        </el-menu-item>
+        <el-menu-item index="/audit">
+          <el-icon><Clock /></el-icon>
+          <span>审计日志</span>
+        </el-menu-item>
+        <el-menu-item index="/seo">
+          <el-icon><Connection /></el-icon>
+          <span>SEO集成</span>
+        </el-menu-item>
       </el-menu>
 
       <div class="sidebar-footer">
@@ -56,7 +95,7 @@
         <el-button size="small" text type="primary" @click="showConfigDialog = true" style="width:100%;margin-top:6px;">
           配置API Key
         </el-button>
-        <div class="version">v1.0.0 Personal</div>
+        <div class="version">v2.0.0 Personal</div>
       </div>
     </el-aside>
 
@@ -104,6 +143,9 @@
           </div>
         </div>
         <div class="topbar-right">
+          <el-button size="small" @click="openSearch" class="search-trigger">
+            <el-icon><Search /></el-icon> 搜索 <kbd>Ctrl+K</kbd>
+          </el-button>
           <el-button size="small" @click="checkConfig" :icon="Setting">配置检查</el-button>
           <el-button size="small" type="primary" @click="checkHealth" :icon="Connection">服务状态</el-button>
         </div>
@@ -113,12 +155,16 @@
         <router-view />
       </el-main>
     </el-container>
+
+    <GlobalSearch ref="globalSearchRef" />
   </el-container>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import GlobalSearch from './GlobalSearch.vue'
+import { Search } from '@element-plus/icons-vue'
 import { useGeoStore } from '../stores/geo'
 import { getLLMConfig, healthCheck } from '../api'
 import { ElMessage } from 'element-plus'
@@ -127,6 +173,11 @@ import axios from 'axios'
 const route = useRoute()
 const router = useRouter()
 const store = useGeoStore()
+const globalSearchRef = ref(null)
+
+function openSearch() {
+  globalSearchRef.value?.open()
+}
 
 const activeMenu = computed(() => route.path)
 const currentPageTitle = computed(() => route.meta?.title || '')
@@ -147,11 +198,14 @@ const pipelineSteps = [
 ]
 
 const activePipelineStep = computed(() => {
-  // 根据 store 状态判断当前处于第几步
-  if (store.hasEvaluation) return 3  // 评测完成，进入导出
-  if (store.hasResults) return 2     // 优化完成，进入评测
-  if (store.hasCleanedText) return 1 // 清洗完成，进入优化
-  return 0                            // 导入
+  // 非核心流水线页面（策略中心/内容规范/收录监测）不激活任何步骤
+  const nonPipelinePages = ['/strategy', '/templates', '/brand-monitor']
+  if (nonPipelinePages.includes(route.path)) return -1
+
+  if (store.hasEvaluation) return 3
+  if (store.hasResults) return 2
+  if (store.hasCleanedText) return 1
+  return 0
 })
 
 // ── API Key 配置弹窗 ──
@@ -185,7 +239,7 @@ async function saveApiKey(plat) {
     plat.configured = true
     // 刷新全局 LLM 配置状态
     const res = await getLLMConfig()
-    store.setLLMConfigs(res.data.llm_platforms || [])
+    store.setLLMConfigs(res.data.llm_platforms || [], res.data.enterprise_name, res.data.enterprise_location, res.data.enterprise_website)
     ElMessage.success(`${plat.platform} 已保存并立即生效`)
     plat.apiKey = ''
   } catch (e) {
@@ -198,7 +252,7 @@ async function saveApiKey(plat) {
 onMounted(async () => {
   try {
     const res = await getLLMConfig()
-    store.setLLMConfigs(res.data.llm_platforms || [])
+    store.setLLMConfigs(res.data.llm_platforms || [], res.data.enterprise_name, res.data.enterprise_location, res.data.enterprise_website)
   } catch (e) {
     ElMessage.warning('LLM配置加载失败，请检查后端服务是否启动')
   }
@@ -208,21 +262,21 @@ async function checkHealth() {
   try {
     const res = await healthCheck()
     ElMessage.success(`服务正常 v${res.data.version}`)
-  } catch (e) { console.error('checkHealth failed:', e); ElMessage.error('后端服务未启动')
+  } catch (e) { ElMessage.error('后端服务未启动: ' + (e.message || '网络错误'))
   }
 }
 
 async function checkConfig() {
   try {
     const res = await getLLMConfig()
-    store.setLLMConfigs(res.data.llm_platforms || [])
+    store.setLLMConfigs(res.data.llm_platforms || [], res.data.enterprise_name, res.data.enterprise_location, res.data.enterprise_website)
     const configured = res.data.llm_platforms?.filter(p => p.configured) || []
     if (configured.length === 0) {
       ElMessage.warning('暂未配置任何LLM平台，请编辑 config/api_keys.yaml 填入API Key')
     } else {
       ElMessage.success(`已配置 ${configured.length} 个AI平台: ${configured.map(c => c.platform).join(', ')}`)
     }
-  } catch (e) { console.error('checkConfig failed:', e); ElMessage.error('无法获取配置')
+  } catch (e) { ElMessage.error('无法获取配置: ' + (e.response?.data?.detail || e.message))
   }
 }
 </script>

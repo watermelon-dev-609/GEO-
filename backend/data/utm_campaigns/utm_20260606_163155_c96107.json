@@ -1,0 +1,16 @@
+{
+  "id": "utm_20260606_163155_c96107",
+  "name": "Test",
+  "utm_source": "",
+  "utm_medium": "ai_referral",
+  "utm_campaign": "",
+  "utm_term": "",
+  "utm_content": "",
+  "landing_page_url": "https://example.com",
+  "platform_ids": [
+    "doubao"
+  ],
+  "active": true,
+  "created_at": "2026-06-06T08:31:55.231057+00:00",
+  "updated_at": "2026-06-06T08:31:55.231057+00:00"
+}

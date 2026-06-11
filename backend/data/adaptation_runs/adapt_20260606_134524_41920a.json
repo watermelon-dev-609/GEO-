@@ -1,0 +1,196 @@
+{
+  "run_id": "adapt_20260606_134524_41920a",
+  "platform_id": "wenxin",
+  "trigger_event": "{\"raw\": \"manual_e2e_test\"}",
+  "stage": "post_test_7d",
+  "status": "completed",
+  "created_at": "2026-06-06T05:45:24.312088+00:00",
+  "completed_at": "2026-06-06T05:46:17.792676+00:00",
+  "articles_affected": 0,
+  "articles_regenerated": 0,
+  "articles_validated": 0,
+  "articles_published": 0,
+  "rollback_version_id": "",
+  "template_version_before": "v1",
+  "template_version_after": "",
+  "validation_errors": [],
+  "notes": [
+    "[published_10pct] 基线已存储: 采信率=0.0%",
+    "[published_10pct] 选中 8/8 篇(10%), 覆盖 8 种沙盘类型",
+    "[published_10pct] 灰度重生成: 8/8 成功",
+    "[published_100pct] 基线已存储: 采信率=0.0%",
+    "[published_100pct] 选中 14/16 篇",
+    "[published_100pct] 全量重生成: 14/14 成功",
+    "[post_test_3d] 采信测试完成: test_id=cite_20260606_054607, 拒采率=0%",
+    "[post_test_3d] 采信指标正常，无降级",
+    "[post_test_7d] 采信测试完成: test_id=cite_20260606_054612, 拒采率=0%",
+    "[post_test_7d] 采信指标正常，无降级"
+  ],
+  "stage_label": "监控发现变化",
+  "baseline_metrics": {
+    "test_id": "cite_20260606_054602",
+    "captured_at": "2026-06-06T05:46:07.053820+00:00",
+    "citation_rate": 0.0,
+    "structure_features": {},
+    "cited_sources": {},
+    "rejection_rate": 0
+  },
+  "grayscale_selection": {
+    "total_articles": 8,
+    "selected_count": 8,
+    "percentage": 0.1,
+    "selected_ids": [
+      "smart_logistics_wenxin_article",
+      "smart_city_wenxin_article",
+      "smart_industry_wenxin_article",
+      "digital_multimedia_wenxin_article",
+      "real_estate_wenxin_article",
+      "smart_agriculture_wenxin_article",
+      "smart_traffic_wenxin_article",
+      "military_terrain_wenxin_article"
+    ],
+    "sandtable_coverage": {
+      "smart_logistics": 1,
+      "smart_city": 1,
+      "smart_industry": 1,
+      "digital_multimedia": 1,
+      "real_estate": 1,
+      "smart_agriculture": 1,
+      "smart_traffic": 1,
+      "military_terrain": 1
+    }
+  },
+  "grayscale_regen": {
+    "attempted": 8,
+    "succeeded": 8,
+    "failed": 0,
+    "details": [
+      {
+        "article_id": "smart_logistics_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "smart_city_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "smart_industry_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "digital_multimedia_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "real_estate_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "smart_agriculture_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "smart_traffic_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "military_terrain_wenxin_article",
+        "status": "regenerated"
+      }
+    ]
+  },
+  "full_rollout_selection": {
+    "total_articles": 16,
+    "selected_count": 14,
+    "percentage": 0.9,
+    "selected_ids": [
+      "smart_agriculture_wenxin_article",
+      "real_estate_wenxin_article",
+      "smart_traffic_wenxin_article",
+      "digital_multimedia_wenxin_article",
+      "smart_industry_wenxin_article_v2",
+      "smart_city_wenxin_article",
+      "military_terrain_wenxin_article",
+      "smart_logistics_wenxin_article_v2",
+      "real_estate_wenxin_article_v2",
+      "smart_traffic_wenxin_article_v2",
+      "military_terrain_wenxin_article_v2",
+      "smart_industry_wenxin_article",
+      "smart_agriculture_wenxin_article_v2",
+      "smart_city_wenxin_article_v2"
+    ],
+    "sandtable_coverage": {
+      "smart_agriculture": 2,
+      "real_estate": 2,
+      "smart_traffic": 2,
+      "digital_multimedia": 1,
+      "smart_industry": 2,
+      "smart_city": 2,
+      "military_terrain": 2,
+      "smart_logistics": 1
+    }
+  },
+  "full_rollout_regen": {
+    "attempted": 14,
+    "succeeded": 14,
+    "failed": 0,
+    "details": [
+      {
+        "article_id": "smart_agriculture_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "real_estate_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "smart_traffic_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "digital_multimedia_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "smart_industry_wenxin_article_v2",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "smart_city_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "military_terrain_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "smart_logistics_wenxin_article_v2",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "real_estate_wenxin_article_v2",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "smart_traffic_wenxin_article_v2",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "military_terrain_wenxin_article_v2",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "smart_industry_wenxin_article",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "smart_agriculture_wenxin_article_v2",
+        "status": "regenerated"
+      },
+      {
+        "article_id": "smart_city_wenxin_article_v2",
+        "status": "regenerated"
+      }
+    ]
+  }
+}

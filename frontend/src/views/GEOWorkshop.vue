@@ -14,7 +14,7 @@
             </el-form-item>
             <el-form-item label="目标AI平台">
               <div v-if="store.configuredPlatforms.length === 0" style="margin-bottom:8px;">
-                <el-alert title="暂未配置任何AI平台，请先在 config/api_keys.yaml 中配置API Key" type="warning" :closable="false" />
+                <el-alert title="暂未配置任何AI平台，请在侧边栏「配置API Key」中配置" type="warning" :closable="false" />
               </div>
               <el-checkbox-group v-model="selectedPlatforms">
                 <el-checkbox v-for="p in availablePlatforms" :key="p.value" :value="p.value" :label="p.value">
@@ -23,6 +23,73 @@
                   <el-tag v-else size="small" type="danger" effect="plain" style="margin-left:4px;">未配置</el-tag>
                 </el-checkbox>
               </el-checkbox-group>
+            </el-form-item>
+            <!-- 文案状态流 -->
+            <div class="status-steps">
+              <div class="status-step" :class="{ active: store.originalText }">
+                <span class="status-dot"></span>原始文本
+              </div>
+              <div class="status-line" :class="{ active: store.cleanedText }"></div>
+              <div class="status-step" :class="{ active: store.cleanedText }">
+                <span class="status-dot"></span>已清洗
+              </div>
+              <div class="status-line" :class="{ active: results.length > 0 }"></div>
+              <div class="status-step" :class="{ active: results.length > 0 }">
+                <span class="status-dot"></span>已优化
+              </div>
+              <div class="status-line" :class="{ active: store.evaluationResult }"></div>
+              <div class="status-step" :class="{ active: store.evaluationResult }">
+                <span class="status-dot"></span>已评测
+              </div>
+            </div>
+            <el-form-item>
+              <el-popover
+                placement="bottom-start"
+                :width="360"
+                trigger="click"
+                :show-arrow="false"
+                popper-class="opt-rules-popover"
+              >
+                <template #reference>
+                  <el-button size="small" :icon="Setting" :loading="optRulesLoading" text>
+                    优化规则设置
+                    <span v-if="platformsWithRules.length" style="color:#9B9EAA;margin-left:4px;">
+                      ({{ platformsWithRules.length }}个平台)
+                    </span>
+                  </el-button>
+                </template>
+                <div class="rules-popover">
+                  <div class="rules-popover-title">GEO优化规则设置</div>
+                  <div class="rules-popover-desc">各平台的优化规则独立控制，开关即时生效</div>
+                  <div v-if="platformsWithRules.length === 0" style="color:#9B9EAA;font-size:13px;text-align:center;padding:20px 0;">
+                    请先在上方选择目标AI平台
+                  </div>
+                  <div
+                    v-for="plat in platformsWithRules"
+                    :key="plat"
+                    class="platform-rules-group"
+                  >
+                    <div class="platform-rules-header">
+                      {{ platformLabelMap[plat] || plat }}
+                    </div>
+                    <div
+                      v-for="rule in (optRulesByPlatform[plat] || [])"
+                      :key="plat + rule.key"
+                      class="rule-item"
+                    >
+                      <div class="rule-header">
+                        <el-switch
+                          v-model="rule.enabled"
+                          size="small"
+                          @change="onOptRuleToggle(plat, rule)"
+                        />
+                        <span class="rule-label">{{ rule.label }}</span>
+                      </div>
+                      <div class="rule-desc">{{ rule.description }}</div>
+                    </div>
+                  </div>
+                </div>
+              </el-popover>
             </el-form-item>
             <el-form-item label="源文案（清洗后）">
               <el-input v-model="sourceText" type="textarea" :rows="6" placeholder="从文案导入页面获取，或手动粘贴" />
@@ -124,7 +191,7 @@
             <el-progress :percentage="Math.round(batchCompleted / batchTotal * 100)" :stroke-width="12" />
             <div class="batch-detail">
               <span v-for="p in selectedPlatforms" :key="p" class="batch-platform" :class="{ done: batchDoneSet.has(p), active: batchCurrent === p }">
-                {{ p }}
+                {{ platformLabelMap[p] || p }}
                 <el-icon v-if="batchDoneSet.has(p)" color="#5B8C5A" :size="14"><CircleCheckFilled /></el-icon>
                 <el-icon v-else-if="batchCurrent === p" color="#C8963E" :size="14" class="is-loading"><Loading /></el-icon>
                 <el-icon v-else color="#c0c4cc" :size="14"><Clock /></el-icon>
@@ -132,6 +199,16 @@
             </div>
           </div>
           <div v-if="streamText" class="stream-output">{{ streamText }}</div>
+        </div>
+
+        <!-- 批量操作按钮 -->
+        <div v-if="results.length > 0" class="batch-actions">
+          <el-button size="small" type="primary" @click="copyAllResults">
+            <el-icon><CopyDocument /></el-icon> 复制全部平台结果
+          </el-button>
+          <el-button size="small" type="success" @click="downloadAllResults">
+            <el-icon><Download /></el-icon> 打包下载全部
+          </el-button>
         </div>
 
         <!-- 平台对比摘要 -->
@@ -152,7 +229,7 @@
           <el-tab-pane
             v-for="r in results"
             :key="r.platform"
-            :label="r.platform"
+            :label="platformLabelMap[r.platform] || r.platform"
             :name="r.platform"
           >
             <el-card shadow="never">
@@ -169,6 +246,9 @@
                 <el-button size="small" type="primary" link @click="copyText(r.optimized_text)">
                   <el-icon><CopyDocument /></el-icon> 复制
                 </el-button>
+                <el-button size="small" type="success" link @click="saveVersion(r)" :loading="savingVersion === r.platform">
+                  <el-icon><FolderAdd /></el-icon> 保存版本
+                </el-button>
               </div>
             </el-card>
           </el-tab-pane>
@@ -177,10 +257,16 @@
     </el-row>
 
     <div style="text-align: right; margin-top: 20px;" v-if="results.length > 0">
+      <el-button size="default" @click="openVersionHistory" style="margin-right:8px;">
+        <el-icon><Clock /></el-icon> 版本历史
+      </el-button>
       <el-button type="warning" size="large" @click="goToEvaluate">
         进入AI评测中心 <el-icon><ArrowRight /></el-icon>
       </el-button>
     </div>
+
+    <VersionHistory ref="versionHistoryRef" :text-id="versionTextId" @rollback="onVersionRollback" />
+    <DiffViewer ref="diffViewerRef" />
   </div>
 </template>
 
@@ -188,9 +274,13 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
-import { rewriteText, getSandtableProfile } from '../api'
+import { MagicStick, Setting, CopyDocument, Download } from '@element-plus/icons-vue'
+import { rewriteText, getSandtableProfile, getOptimizationRules, updateOptimizationRules } from '../api'
 import { ElMessage } from 'element-plus'
 import { SANDTABLE_TYPES, AI_PLATFORMS } from '../constants'
+import VersionHistory from '../components/VersionHistory.vue'
+import DiffViewer from '../components/DiffViewer.vue'
+import api from '../api'
 
 const router = useRouter()
 const store = useGeoStore()
@@ -211,6 +301,59 @@ const adoptedHints = ref([])
 function adoptHint(sg) { adoptedHints.value.push(sg) }
 function removeHint(sg) { adoptedHints.value = adoptedHints.value.filter(h => h !== sg) }
 
+// ── 优化规则设置（按平台独立）──
+const optRulesByPlatform = ref({})  // { deepseek: [...rules], doubao: [...rules] }
+const optRulesLoading = ref(false)
+
+async function loadOptRules() {
+  optRulesLoading.value = true
+  try {
+    const res = await getOptimizationRules()
+    const map = {}
+    for (const p of (res.data.platforms || [])) {
+      map[p.platform] = p.rules || []
+    }
+    optRulesByPlatform.value = map
+  } catch (e) {
+    // 静默失败
+  } finally {
+    optRulesLoading.value = false
+  }
+}
+
+async function onOptRuleToggle(platform, rule) {
+  try {
+    await updateOptimizationRules({
+      platform,
+      rules: optRulesByPlatform.value[platform] || [],
+    })
+  } catch (e) {
+    ElMessage.error('保存优化规则失败: ' + (e.response?.data?.detail || e.message))
+    rule.enabled = !rule.enabled
+  }
+}
+
+// 当前选中有规则的平台
+const platformsWithRules = computed(() => {
+  return selectedPlatforms.value.filter(p => optRulesByPlatform.value[p]?.length > 0)
+})
+
+// 构建传给API的优化规则配置
+function buildOptRulesPayload() {
+  const payload = {}
+  for (const plat of selectedPlatforms.value) {
+    const rules = optRulesByPlatform.value[plat]
+    if (rules?.length) {
+      const rulesObj = {}
+      for (const r of rules) {
+        rulesObj[r.key] = { enabled: r.enabled }
+      }
+      payload[plat] = rulesObj
+    }
+  }
+  return Object.keys(payload).length > 0 ? payload : undefined
+}
+
 // ── 取消/进度控制 ──
 const abortController = ref(null)
 const batchCompleted = ref(0)
@@ -228,23 +371,63 @@ const rewriteProgressText = computed(() => {
 
 const sandtableTypes = SANDTABLE_TYPES
 const availablePlatforms = AI_PLATFORMS
+const platformLabelMap = Object.fromEntries(AI_PLATFORMS.map(p => [p.value, p.label]))
+
+// ── 版本管理 ──
+const versionHistoryRef = ref(null)
+const diffViewerRef = ref(null)
+const savingVersion = ref('')
+const versionTextId = computed(() => {
+  if (!sandtableType.value) return 'workshop_default'
+  return `workshop_${sandtableType.value}`
+})
+
+function openVersionHistory() {
+  versionHistoryRef.value?.open()
+}
+
+async function saveVersion(result) {
+  savingVersion.value = result.platform
+  try {
+    await api.post(`/versions/${versionTextId.value}`, null, {
+      params: {
+        content: result.optimized_text,
+        title: `${sandtableType.value}_${result.platform}_${new Date().toLocaleDateString()}`,
+        platform: result.platform,
+      },
+    })
+    ElMessage.success('版本已保存')
+  } catch (e) {
+    ElMessage.error('保存版本失败: ' + (e.response?.data?.detail || e.message))
+  } finally { savingVersion.value = '' }
+}
+
+function onVersionRollback(v) {
+  sourceText.value = v.content || ''
+  ElMessage.info(`已回滚到版本「${v.title}」，可点击优化重新生成`)
+}
 
 onMounted(() => {
-  // 只在文本为空或来自重优化时自动填充，避免覆盖用户手动编辑
-  if (!sourceText.value || store.reoptimizeContext) {
-    sourceText.value = store.cleanedText
-  }
-  if (store.currentSandtableType && !sandtableType.value) {
-    sandtableType.value = store.currentSandtableType
-  }
-
-  // 检测从评测中心传入的重优化上下文
+  loadOptRules()
+  // 检测从评测中心传入的重优化上下文（优先处理，使用优化后文案）
   if (store.reoptimizeContext) {
     const ctx = store.reoptimizeContext
-    if (ctx.sourceText) sourceText.value = ctx.sourceText
+    // 重优化时使用评测过的GEO优化文案，不是清洗文案
+    if (ctx.sourceText) {
+      sourceText.value = ctx.sourceText
+    } else if (!sourceText.value) {
+      sourceText.value = store.cleanedText
+    }
     if (ctx.sandtableType) sandtableType.value = ctx.sandtableType
-    if (ctx.weakPoints?.length) reoptWeakPoints.value = ctx.weakPoints
-    if (ctx.suggestions?.length) {
+    if (ctx.fromMonitor) {
+      reoptWeakPoints.value = ctx.weakPoints || []
+      reoptSuggestions.value = []
+      adoptedHints.value = [...(ctx.suggestions || [])]
+      ElMessage.info(`来自AI收录监测：${ctx.weakPoints?.length || 0} 条未收录问题已转为优化指令，请导入文案后点击优化`)
+    } else if (ctx.weakPoints?.length) {
+      reoptWeakPoints.value = ctx.weakPoints
+    }
+    if (ctx.suggestions?.length && !ctx.fromMonitor) {
       reoptSuggestions.value = ctx.suggestions
       if (ctx.autoAdoptAll) {
         adoptedHints.value = [...ctx.suggestions]
@@ -252,6 +435,9 @@ onMounted(() => {
     }
     showReoptContext.value = true
     store.clearReoptimizeContext()
+  } else if (!sourceText.value) {
+    // 正常进入时，仅在文本为空时自动填充清洗文案
+    sourceText.value = store.cleanedText
   }
 })
 
@@ -270,7 +456,9 @@ async function onTypeChange(val) {
   try {
     const res = await getSandtableProfile(val)
     sandtableProfile.value = res.data
-  } catch (e) { console.error('onTypeChange failed:', e) }
+  } catch (e) {
+    ElMessage.error('加载沙盘配置失败: ' + (e.response?.data?.detail || e.message))
+  }
 }
 
 async function startRewrite() {
@@ -278,6 +466,10 @@ async function startRewrite() {
     ElMessage.warning('请至少选择一个AI平台')
     return
   }
+
+  store.setCleanedText(sourceText.value)
+  store.setSandtableType(sandtableType.value)
+  store.setSelectedPlatforms(selectedPlatforms.value)
 
   isRewriting.value = true
   streamText.value = ''
@@ -301,6 +493,7 @@ function cancelRewrite() {
     abortController.value.abort()
   }
   isRewriting.value = false
+  batchCurrent.value = ''
   ElMessage.info('已停止生成')
 }
 
@@ -316,6 +509,7 @@ async function startStreamRewrite(platform) {
     platforms: [platform],
     dimensions: store.dimensions,
     optimization_hints: adoptedHints.value,
+    optimization_rules: buildOptRulesPayload(),
   }
 
   try {
@@ -323,8 +517,15 @@ async function startStreamRewrite(platform) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(300000)]),
     })
+
+    if (!resp.ok) {
+      let detail = resp.statusText
+      try { const errBody = await resp.json(); detail = errBody.detail || detail } catch {}
+      ElMessage.error(`请求失败 (${resp.status}): ${detail}`)
+      return
+    }
 
     const reader = resp.body.getReader()
     const decoder = new TextDecoder()
@@ -366,6 +567,31 @@ async function startStreamRewrite(platform) {
         } catch { /* 跳过非 JSON 行 */ }
       }
     }
+
+    if (buffer.trim()) {
+      const dataMatch = buffer.match(/^data: (.+)$/)
+      if (dataMatch && dataMatch[1] !== '[DONE]') {
+        try {
+          const chunk = JSON.parse(dataMatch[1])
+          if (chunk.type === 'done') {
+            results.value = [{
+              platform,
+              optimized_text: chunk.full_text,
+              strategy_notes: chunk.strategy_notes || '',
+              word_count: chunk.word_count,
+            }]
+            activeTab.value = platform
+            batchCompleted.value = 1
+            batchDoneSet.value = new Set([platform])
+            store.setRewriteResults(results.value)
+            store.setSelectedPlatforms(selectedPlatforms.value)
+            ElMessage.success(`优化完成（${chunk.word_count} 字）`)
+          } else if (chunk.type === 'error') {
+            ElMessage.error('流式生成失败: ' + chunk.message)
+          }
+        } catch { /* 跳过非 JSON 行 */ }
+      }
+    }
   } catch (e) {
     if (e.name === 'AbortError') return
     ElMessage.error('流式连接中断: ' + (e.message || '未知错误'))
@@ -379,6 +605,7 @@ async function startBatchRewrite() {
   // 逐个平台请求，每个都可感知进度
   const allPlatforms = [...selectedPlatforms.value]
   const allResults = []
+  const failedPlatforms = []
   let successCount = 0
 
   for (const platform of allPlatforms) {
@@ -392,16 +619,19 @@ async function startBatchRewrite() {
         platforms: [platform],
         dimensions: store.dimensions,
         optimization_hints: adoptedHints.value,
+        optimization_rules: buildOptRulesPayload(),
       }, { signal: abortController.value?.signal })
 
       const platformResult = res.data.results?.[0]
       if (platformResult?.optimized_text) {
         allResults.push(platformResult)
         successCount++
+      } else {
+        failedPlatforms.push(platform)
       }
     } catch (e) {
       if (e.name === 'AbortError' || e.code === 'ERR_CANCELED') break
-      // 单个平台失败不影响其他平台
+      failedPlatforms.push(platform)
     }
 
     batchCompleted.value++
@@ -411,11 +641,17 @@ async function startBatchRewrite() {
   results.value = allResults
   if (allResults.length > 0) {
     activeTab.value = allResults[0]?.platform || ''
+  } else {
+    activeTab.value = ''
   }
 
   store.setRewriteResults(results.value)
   store.setSelectedPlatforms(selectedPlatforms.value)
 
+  if (failedPlatforms.length > 0) {
+    const names = failedPlatforms.map(p => platformLabelMap[p] || p).join('、')
+    ElMessage.warning(`${names} 生成失败，请检查API配置或重试`)
+  }
   if (successCount > 0) {
     ElMessage.success(`优化完成！${successCount}/${allPlatforms.length} 个平台生成成功`)
     store.addToHistory({
@@ -428,6 +664,33 @@ async function startBatchRewrite() {
 
 function copyText(text) {
   navigator.clipboard.writeText(text).then(() => ElMessage.success('已复制'))
+}
+
+function copyAllResults() {
+  const parts = results.value.map(r => {
+    const label = platformLabelMap[r.platform] || r.platform
+    return `## ${label}\n\n${r.optimized_text}`
+  })
+  const all = parts.join('\n\n---\n\n')
+  navigator.clipboard.writeText(all).then(() =>
+    ElMessage.success(`已复制 ${results.value.length} 个平台结果`)
+  )
+}
+
+function downloadAllResults() {
+  const parts = results.value.map(r => {
+    const label = platformLabelMap[r.platform] || r.platform
+    return `## ${label}\n\n${r.optimized_text}\n\n> 策略: ${r.strategy_notes?.substring(0, 80) || ''}\n`
+  })
+  const date = new Date().toISOString().slice(0, 10)
+  const type = sandtableType.value || 'GEO'
+  const content = `# ${type} GEO优化结果 (${date})\n\n${parts.join('\n\n---\n\n')}`
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = `${type}_GEO优化结果_${date}.md`
+  a.click(); URL.revokeObjectURL(url)
+  ElMessage.success('打包下载完成')
 }
 
 function escapeHtml(str) {
@@ -476,5 +739,23 @@ function goToEvaluate() {
 .config-hint { font-size: 13px; color: #9B9EAA; }
 .config-hint ul { padding-left: 18px; margin-top: 4px; }
 .config-hint li { margin: 2px 0; }
+.batch-actions { display: flex; gap: 8px; margin-bottom: 12px; }
+.status-steps { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; padding: 8px 12px; background: #FAF8F5; border-radius: 8px; }
+.status-step { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #C0C4CC; white-space: nowrap; }
+.status-step.active { color: #5B8C5A; font-weight: 600; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: #C0C4CC; flex-shrink: 0; }
+.status-step.active .status-dot { background: #5B8C5A; }
+.status-line { flex: 1; height: 2px; min-width: 16px; background: #E8E5DF; border-radius: 1px; }
+.status-line.active { background: #5B8C5A; }
 .platform-compare { margin-bottom: 16px; }
+.rules-popover { padding: 4px 0; max-height: 420px; overflow-y: auto; }
+.rules-popover-title { font-size: 15px; font-weight: 600; color: #2D3142; margin-bottom: 4px; }
+.rules-popover-desc { font-size: 12px; color: #9B9EAA; margin-bottom: 16px; }
+.platform-rules-group { margin-bottom: 12px; }
+.platform-rules-header { font-size: 13px; font-weight: 600; color: #C8963E; padding: 4px 0 8px 0; border-bottom: 1px solid rgba(200,150,62,0.2); margin-bottom: 4px; }
+.rule-item { padding: 8px 0; border-bottom: 1px solid #F0EFEA; }
+.rule-item:last-child { border-bottom: none; }
+.rule-header { display: flex; align-items: center; gap: 10px; margin-bottom: 3px; }
+.rule-label { font-size: 13px; font-weight: 500; color: #2D3142; }
+.rule-desc { font-size: 11px; color: #9B9EAA; padding-left: 44px; line-height: 1.4; }
 </style>

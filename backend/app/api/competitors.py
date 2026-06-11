@@ -43,6 +43,47 @@ async def list_competitors():
     return {"competitors": _list_all()}
 
 
+# ── 竞品自动监控（必须在 /{comp_id} 之前注册，避免路由拦截）──
+
+@router.post("/monitor/trigger")
+async def trigger_competitor_monitor():
+    """手动触发竞品自动监控（立即执行一次完整周期）"""
+    try:
+        from app.core.competitor_monitor import run_competitor_monitor_cycle
+        result = await run_competitor_monitor_cycle()
+        return {"status": "ok", **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"竞品监控失败: {e}")
+
+
+@router.get("/monitor/history")
+async def get_monitor_history(days: int = 30):
+    """获取竞品监控历史记录"""
+    try:
+        from app.core.competitor_monitor import get_monitoring_history
+        history = get_monitoring_history(days)
+        return {"status": "ok", "days": days, "cycles": history}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取历史失败: {e}")
+
+
+@router.get("/monitor/compare")
+async def compare_monitor_cycles(cycle1: str, cycle2: str):
+    """对比两个监控周期的变化"""
+    if not cycle1 or not cycle2:
+        raise HTTPException(status_code=400, detail="请提供 cycle1 和 cycle2 参数")
+    try:
+        from app.core.competitor_monitor import compare_cycles
+        result = compare_cycles(cycle1, cycle2)
+        if "error" in result:
+            raise HTTPException(status_code=404, detail=result["error"])
+        return {"status": "ok", **result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"对比失败: {e}")
+
+
 @router.get("/{comp_id}")
 async def get_competitor(comp_id: str):
     """获取竞品详情"""

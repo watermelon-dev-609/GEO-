@@ -1,0 +1,107 @@
+# 字节豆包 — 平台模板配置
+# 2026-06 更新：权重=头条/知乎>小红书>公众号>官网；结论先行；15天黄金期；禁忌=营销腔/长段落/过时内容
+
+platform_id: doubao
+platform_name: "字节豆包"
+version: 1
+updated_at: "2026-06-02"
+citation_mechanism: "豆包整合字节跳动生态搜索，用户以普通消费者和中小企业为主。偏好直白、场景化、有明确行动指引的内容。"
+strategy: "短句通俗 + 利益前置 + 低理解成本 + 每句≤30字硬约束"
+style: "短句直白、通俗友好、亮点前置、获客导向、场景感强、每句≤30字"
+
+header:
+  title_format: "{business}就找{location}{company}"
+  first_paragraph_rules:
+    - "★ 开篇直答：首段30字内直接回答'能帮你做什么'"
+    - "结论先行，1-2句说清核心价值"
+    - "利益前置，先说对客户的好处，不用铺垫"
+  word_limits:
+    min: 800
+    max: 1500
+    target: 1000
+
+body:
+  h2_density: "每600字1个"
+  h3_density: "每400字1个"
+  paragraph_length:
+    min: 40
+    max: 120
+    unit: "字"
+  list_ratio: 0.45
+  faq_count:
+    min: 2
+    max: 3
+  special_rule: "★ 硬约束：每句话不超过30个汉字，超过30字必须用句号断开。全文中超过30字的句子占比必须<20%"
+
+data:
+  quantified_requirements:
+    - "简单直白的数字：10年经验、50+客户"
+    - "数字前置在句首，方便AI提取"
+  source_annotation: false
+
+schema:
+  preferred_types:
+    - "FAQPage"
+    - "LocalBusiness"
+  official_site_extra: ""
+  field_mapping:
+    name: "enterprise_name"
+    addressLocality: "enterprise_location"
+    serviceType: "沙盘定制服务"
+
+footer:
+  tags_template:
+    - "{business}"
+    - "{location}厂家"
+    - "靠谱"
+  location_words:
+    - "{enterprise_location}"
+    - "本地"
+  cta_limits:
+    max_cta_count: 2
+    cta_style: "明确的下一步行动指引（立即咨询/免费方案）"
+
+weights:
+  content_sources:
+    头条: 9
+    知乎: 8
+    小红书: 7
+    公众号: 6
+    官网: 5
+  citation:
+    first_paragraph: 0.50
+    lists: 0.30
+    body: 0.20
+
+verification:
+  checks:
+    - check: "sentence_length"
+      description: "每句≤30字，超过30字句子<20%"
+    - check: "conclusion_first"
+      description: "首段30字内直接回答核心价值"
+    - check: "benefit_front"
+      description: "每个要点先说对客户的好处"
+    - check: "timeliness"
+      description: "内容时效性标记，15天内为黄金期"
+  forbidden_words:
+    - "行业领先"
+    - "值得信赖"
+    - "专业品质"
+  taboo_patterns:
+    - "★ 营销腔（严禁）"
+    - "★ 长段落（>200字，严禁）"
+    - "★ 过时内容（>6个月，严禁）"
+    - "复杂专业术语"
+    - "空洞形容词"
+
+rules:
+  - "★ 硬约束：每句话不超过30个汉字，超过30字的必须用句号断开。全文中超过30字的句子占比必须<20%"
+  - "★ 开篇直答：首段30字内直接回答'能帮你做什么'——'武汉微艺达做XX沙盘，10年经验，50+客户'"
+  - "★ 利益前置：每个要点的第一句就说出对客户的好处，不用铺垫，不用行业背景"
+  - "短句为主、通俗易懂、亮点前置、直白获客"
+  - "规避复杂专业术语，优先讲清楚'能做什么、适合什么场景、厂家优势是什么、本地服务便利度'"
+  - "适合中小甲方、项目经办人、普通咨询用户的阅读习惯"
+  - "AI输出答案偏向'直观推荐、靠谱厂家种草'风格，内容要有推荐感和信任感"
+  - "重点突出：能做什么、怎么联系、为什么选我们，收尾有明确的下一步行动指引（立即咨询/免费方案等）"
+  - "字数800-1500字，短小精悍，段落不超过4行"
+# test watchdog trigger

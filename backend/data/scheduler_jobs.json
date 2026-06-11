@@ -1,0 +1,11 @@
+{
+  "job_1780203534015": {
+    "name": "每日品牌收录监测",
+    "type": "platform_check",
+    "trigger": "interval",
+    "trigger_value": "5",
+    "enabled": true,
+    "last_run": "2026-06-10 15:21:53",
+    "run_count": 793
+  }
+}

@@ -1,13 +1,25 @@
 <template>
+  <DisclaimerBanner />
   <router-view v-slot="{ Component }">
     <transition name="fade" mode="out-in">
-      <component :is="Component" />
+      <suspense timeout="0">
+        <component :is="Component" />
+        <template #fallback>
+          <div style="display:flex;align-items:center;justify-content:center;height:100vh;">
+            <div style="text-align:center;">
+              <div style="width:40px;height:40px;border:3px solid #E8E5DF;border-top-color:#C8963E;border-radius:50%;animation:geo-spin 0.8s linear infinite;margin:0 auto 16px;"></div>
+              <p style="color:#9B9EAA;font-size:14px;">页面加载中...</p>
+            </div>
+          </div>
+        </template>
+      </suspense>
     </transition>
   </router-view>
 </template>
 
 <script setup>
 import { onErrorCaptured } from 'vue'
+import DisclaimerBanner from './components/DisclaimerBanner.vue'
 
 onErrorCaptured((err, instance, info) => {
   console.error('[GEO] Render error:', err, info)
@@ -122,6 +134,9 @@ body {
 .fade-enter-active, .fade-leave-active { transition: opacity 0.25s ease, transform 0.25s ease; }
 .fade-enter-from { opacity: 0; transform: translateY(6px); }
 .fade-leave-to { opacity: 0; transform: translateY(-4px); }
+
+/* ── Suspense spinner ── */
+@keyframes geo-spin { to { transform: rotate(360deg); } }
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }

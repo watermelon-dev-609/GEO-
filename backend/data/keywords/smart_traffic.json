@@ -1,0 +1,183 @@
+{
+  "sandtable_type": "smart_traffic",
+  "label": "智慧交通沙盘",
+  "keywords": {
+    "brand": [
+      {
+        "word": "武汉微艺达",
+        "weight": "core",
+        "status": "optimized"
+      },
+      {
+        "word": "微艺达智能科技",
+        "weight": "core",
+        "status": "optimized"
+      },
+      {
+        "word": "武汉沙盘定制",
+        "weight": "core",
+        "status": "optimized"
+      },
+      {
+        "word": "沙盘模型厂家",
+        "weight": "core",
+        "status": "optimized"
+      },
+      {
+        "word": "武汉沙盘模型",
+        "weight": "core",
+        "status": "optimized"
+      },
+      {
+        "word": "GEO测试关键词_1780319723",
+        "weight": "8",
+        "status": "approved"
+      },
+      {
+        "word": "TEST_1780320193",
+        "weight": "8",
+        "status": "approved"
+      },
+      {
+        "word": "P0_REGRESSION_TEST",
+        "weight": "8",
+        "status": "approved"
+      },
+      {
+        "word": "智能交通仿真",
+        "weight": "8",
+        "status": "approved"
+      }
+    ],
+    "scene": [
+      {
+        "word": "智慧交通沙盘定制",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "智慧城市数字沙盘",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "工业仿真沙盘",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "智慧农业物联网沙盘",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "军事地形沙盘模型",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "数字多媒体展厅",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "智慧交通沙盘",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "智能交通沙盘系统",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "交通仿真沙盘",
+        "weight": "core",
+        "status": "pending"
+      },
+      {
+        "word": "智慧交通沙盘场景",
+        "weight": "secondary",
+        "status": "pending"
+      },
+      {
+        "word": "车路协同沙盘",
+        "weight": "scene",
+        "status": "pending"
+      },
+      {
+        "word": "自动驾驶沙盘测试",
+        "weight": "scene",
+        "status": "pending"
+      }
+    ],
+    "longtail": [
+      {
+        "word": "沙盘模型定制多少钱",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "武汉沙盘厂家哪家好",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "数字沙盘制作流程",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "智慧交通沙盘方案",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "智慧交通沙盘厂家排名",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "智慧交通沙盘有哪些功能",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "智慧交通沙盘怎么制作",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "智慧交通沙盘与数字孪生区别",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "智慧交通沙盘用于哪些场景",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "智慧交通沙盘系统报价",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "智慧交通沙盘教学设备",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "智慧交通沙盘项目案例",
+        "weight": "longtail",
+        "status": "pending"
+      },
+      {
+        "word": "智慧交通沙盘招标信息",
+        "weight": "longtail",
+        "status": "pending"
+      }
+    ]
+  },
+  "updated_at": "2026-06-06T16:32:37.092388"
+}

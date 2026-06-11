@@ -2,7 +2,7 @@
 
 # ── 文本标准化清洗 ──
 
-CLEANING_SYSTEM_PROMPT = """你是一个专业的商业文案标准化处理专家，服务于武汉微艺达智能科技有限公司（一家定制沙盘模型制造企业）。
+CLEANING_SYSTEM_PROMPT = """你是一个专业的商业文案标准化处理专家，服务于一家定制沙盘模型制造企业。
 
 你的任务是对输入的原始文案进行标准化清洗处理，输出符合以下要求的干净文本：
 
@@ -69,3 +69,69 @@ TYPE_DETECTION_PROMPT = """根据文本内容判断属于哪种沙盘业务类�
 只返回类型名称，不要解释。"""
 
 TYPE_DETECTION_USER = "判断以下文本的沙盘业务类型：\n{content}"
+
+
+# ── 动态清洗规则Prompt构建 ──
+
+# 各规则的详细说明文本
+_RULE_DETAILS = {
+    "remove_redundancy": "删除重复内容、空话套话、无意义的修饰词",
+    "unify_terminology": "将口语化表达规范为行业标准术语（如\"能联动的模型\"→\"动态联动仿真沙盘\"）",
+    "standardize_format": "统一段落结构，确保逻辑清晰、层次分明",
+    "preserve_key_info": "产品参数、技术指标、服务流程、案例数据必须完整保留",
+    "de_advertise": "去除过度营销用语，保留客观描述",
+}
+
+# 所有规则组成的完整规则映射（用于构建默认prompt）
+_DEFAULT_RULE_ORDER = [
+    "remove_redundancy",
+    "unify_terminology",
+    "standardize_format",
+    "preserve_key_info",
+    "de_advertise",
+]
+
+
+def build_cleaning_system_prompt(rules_config: dict | None = None) -> str:
+    """根据规则配置动态构建清洗系统Prompt
+
+    Args:
+        rules_config: 规则配置字典，格式如 {"remove_redundancy": {"enabled": True}, ...}
+                      若为 None 或空，使用所有默认规则
+
+    Returns:
+        动态构建的 system prompt 字符串
+    """
+    if not rules_config:
+        # 无配置时使用所有规则
+        rules_config = {k: {"enabled": True} for k in _DEFAULT_RULE_ORDER}
+
+    # 收集已启用的规则
+    enabled_rules = []
+    for rule_key in _DEFAULT_RULE_ORDER:
+        rule_cfg = rules_config.get(rule_key, {})
+        if isinstance(rule_cfg, dict) and rule_cfg.get("enabled", True):
+            detail = _RULE_DETAILS.get(rule_key, "")
+            if detail:
+                enabled_rules.append(f"  - {detail}")
+
+    # 构建规则部分
+    if enabled_rules:
+        rules_text = "\n".join(enabled_rules)
+    else:
+        rules_text = "  - 仅做基础格式化处理（统一标点、去除多余空行、HTML标签清理）"
+
+    prompt = f"""你是一个专业的商业文案标准化处理专家，服务于一家定制沙盘模型制造企业。
+
+你的任务是对输入的原始文案进行标准化清洗处理，输出符合以下要求的干净文本：
+
+## 启用的清洗规则
+{rules_text}
+
+## 输出要求
+- 输出格式整洁、段落分明
+- 每段聚焦一个核心信息点
+- 适合后续AI模型抓取和结构化处理
+- 不要输出任何解释性文字，直接输出清洗后的文本"""
+
+    return prompt

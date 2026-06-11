@@ -5,13 +5,13 @@ import json
 import logging
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from app.models.schemas import EvalStartRequest, CompareEvaluationsRequest, QuickBrandCheckRequest
+from app.models.schemas import EvalStartRequest, CompareEvaluationsRequest, QuickBrandCheckRequest, LLMGenerateQuestionsRequest
 from app.models.enums import AIPlatform, EvalPhase
 from app.core.evaluator import AIEvaluator
 from app.core.eval_session import EvalSession
 from app.core.eval_dimensions import DimensionRegistry
 from app.services.llm.base import LLMFactory
-from app.utils.config import load_settings, load_api_keys
+from app.utils.config import load_settings, load_api_keys, get_brand_variants
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +67,14 @@ async def start_evaluation(req: EvalStartRequest):
         ]
 
     from app.models.enums import SandtableType, UserRole
-    st = SandtableType(req.sandtable_type) if isinstance(req.sandtable_type, str) else req.sandtable_type
-    roles = [UserRole(r) for r in req.user_roles] if req.user_roles else None
+    try:
+        st = SandtableType(req.sandtable_type) if isinstance(req.sandtable_type, str) else req.sandtable_type
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"无效的沙盘类型: {req.sandtable_type}")
+    try:
+        roles = [UserRole(r) for r in req.user_roles] if req.user_roles else None
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"无效的用户角色: {e}")
 
     async def event_generator():
         try:
@@ -84,11 +90,11 @@ async def start_evaluation(req: EvalStartRequest):
                 yield event_str
                 await asyncio.sleep(0.01)
         except asyncio.CancelledError:
-            session.mark_cancelled()
+            await session.mark_cancelled()
             raise
         except GeneratorExit:
-            session.cancel()
-            session.mark_cancelled()
+            await session.cancel()
+            await session.mark_cancelled()
         except Exception as e:
             logger.exception(f"SSE stream error for session {session.session_id}")
             error_event = f"event: eval_error\ndata: {json.dumps({'session_id': session.session_id, 'error': str(e)}, ensure_ascii=False)}\n\n"
@@ -121,8 +127,8 @@ async def cancel_evaluation(session_id: str):
     session = await EvalSession.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-    session.cancel()
-    session.mark_cancelled()
+    await session.cancel()
+    await session.mark_cancelled()
     return {"status": "cancelled", "session_id": session_id}
 
 
@@ -244,14 +250,22 @@ async def evaluate_semantic(req: EvalStartRequest):
     try:
         evaluator = _get_evaluator(with_llm=True)
         from app.models.enums import SandtableType, UserRole
-        st = SandtableType(req.sandtable_type) if isinstance(req.sandtable_type, str) else req.sandtable_type
-        roles = [UserRole(r) for r in req.user_roles] if req.user_roles else None
+        try:
+            st = SandtableType(req.sandtable_type) if isinstance(req.sandtable_type, str) else req.sandtable_type
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"无效的沙盘类型: {req.sandtable_type}")
+        try:
+            roles = [UserRole(r) for r in req.user_roles] if req.user_roles else None
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"无效的用户角色: {e}")
 
+        # 使用用户选择的平台；未选择时默认 DeepSeek
+        platforms = [AIPlatform(p) for p in req.platforms] if req.platforms else [AIPlatform.DEEPSEEK]
         result = await evaluator.evaluate(
             optimized_text=req.optimized_text,
             sandtable_type=st,
             original_text=req.original_text,
-            platforms=[AIPlatform.DEEPSEEK],
+            platforms=platforms,
             user_roles=roles,
             custom_questions=req.custom_questions,
         )
@@ -294,6 +308,8 @@ async def quick_brand_check(req: QuickBrandCheckRequest):
 
         text = req.text
         brand_keywords = req.brand_keywords
+        if not brand_keywords:
+            brand_keywords = get_brand_variants()
 
         emb_svc = EmbeddingService()
         text_vec = emb_svc.encode_single(text)
@@ -313,3 +329,85 @@ async def quick_brand_check(req: QuickBrandCheckRequest):
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail="品牌检测服务暂时不可用，请稍后重试")
+
+
+@router.post("/generate-questions")
+async def generate_eval_questions(req: LLMGenerateQuestionsRequest):
+    """基于优化文案，使用LLM生成针对性的评测问题供用户选择"""
+    from app.services.llm.base import LLMMessage
+
+    settings = load_settings()
+    api_keys = load_api_keys()
+    default_platform = settings.get("llm", {}).get("default_model", "deepseek")
+    plat_cfg = settings.get("llm", {}).get("platforms", {}).get(default_platform, {})
+    key_info = api_keys.get("platforms", {}).get(default_platform, {})
+
+    api_key = key_info.get("api_key", "")
+    if not api_key or "your-" in api_key:
+        raise HTTPException(status_code=503, detail="LLM未配置，请先在侧边栏配置API Key")
+
+    from app.models.enums import AIPlatform
+    adapter_type = AIPlatform(default_platform).adapter_type
+    llm = LLMFactory.create(
+        platform=adapter_type, api_key=api_key,
+        model_name=plat_cfg.get("model_name", ""),
+        base_url=plat_cfg.get("base_url"),
+    )
+
+    from app.models.enums import SandtableType
+    from app.utils.config import get_enterprise_name
+    try:
+        st_label = SandtableType(req.sandtable_type).label
+    except ValueError:
+        st_label = req.sandtable_type
+    brand_variants = get_brand_variants()
+    en = req.enterprise_name or (brand_variants[0] if brand_variants else get_enterprise_name())
+
+    system_prompt = (
+        "你是一个GEO评测问题生成专家。你的任务是根据给定的企业文案，生成模拟真实用户"
+        "在AI平台上可能搜索的问题。问题应覆盖：品牌直问、场景需求、产品对比、技术细节等角度。"
+        "每个问题应像真实用户会输入的自然语言查询，不要编造文案中不存在的信息。"
+    )
+    user_prompt = (
+        f"以下是一段关于「{en}」在「{st_label}」领域的优化文案：\n\n"
+        f"---\n{req.optimized_text[:3000]}\n---\n\n"
+        f"请基于这段文案生成 {req.count} 个真实的用户搜索问题，覆盖不同查询意图。\n"
+        f"要求：\n"
+        f"1. 每个问题一行，用中文\n"
+        f"2. 问题应该像真实用户在AI搜索框中输入的自然语言\n"
+        f"3. 覆盖品牌直问、场景需求、产品对比、技术细节、价格咨询等角度\n"
+        f"4. 只基于文案中已有的事实，不要编造\n\n"
+        f"直接返回问题列表，每行一个问题，不要编号。"
+    )
+
+    try:
+        messages = [
+            LLMMessage(role="system", content=system_prompt),
+            LLMMessage(role="user", content=user_prompt),
+        ]
+        resp = await llm.chat(messages, temperature=0.7, max_tokens=1024)
+        questions = [
+            q.strip() for q in resp.content.strip().split('\n')
+            if q.strip() and not q.strip().startswith('#') and len(q.strip()) >= 5
+        ]
+        # 限制数量
+        questions = questions[:req.count]
+
+        # 补充预设问题作为兜底
+        if len(questions) < 5:
+            from app.core.evaluator import ROLE_QUESTIONS
+            from app.models.enums import UserRole
+            fallback = []
+            for role in [UserRole.B_END_PROCUREMENT, UserRole.GENERAL_CONSULTANT]:
+                for q in ROLE_QUESTIONS.get(role, [])[:3]:
+                    fallback.append(q.format(type=st_label))
+            questions.extend(fallback[:req.count - len(questions)])
+
+        return {
+            "questions": list(dict.fromkeys(questions)),
+            "generated_count": len(questions),
+            "source": "llm_generated",
+        }
+    except Exception as e:
+        logger.exception("LLM生成评测问题失败")
+        raise HTTPException(status_code=500, detail=f"问题生成失败: {str(e)}")

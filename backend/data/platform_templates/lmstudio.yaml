@@ -1,0 +1,86 @@
+# LM Studio本地模型 — 平台模板配置
+# 本地OpenAI兼容接口，base_url: localhost:1234，完全离线
+
+platform_id: lmstudio
+platform_name: "LM Studio本地模型"
+version: 1
+updated_at: "2026-06-02"
+citation_mechanism: "通过LM Studio的OpenAI兼容API进行本地推理，支持多种GGUF量化模型。适用于内网隔离环境，完全离线运行。"
+strategy: "OpenAI兼容协议 + 本地推理 + 内网适配"
+style: "简洁清晰、结构分明、协议兼容、内网安全"
+
+header:
+  title_format: "{business} — {location}{company}"
+  first_paragraph_rules:
+    - "简洁明了的企业定位"
+    - "适配小型模型的生成能力"
+  word_limits:
+    min: 1000
+    max: 2000
+    target: 1500
+
+body:
+  h2_density: "每700字1个"
+  h3_density: "每350字1个"
+  paragraph_length:
+    min: 100
+    max: 250
+    unit: "字"
+  list_ratio: 0.20
+  faq_count:
+    min: 1
+    max: 3
+  special_rule: "采用清晰的三段式结构（概述→方案详情→服务保障），确保各类模型均能正确解析"
+
+data:
+  quantified_requirements:
+    - "数据简洁清晰，避免过于复杂的数字"
+    - "遵循基础GEO原则"
+  source_annotation: true
+
+schema:
+  preferred_types:
+    - "Article"
+  official_site_extra: ""
+  field_mapping:
+    name: "enterprise_name"
+    addressLocality: "enterprise_location"
+    serviceType: "沙盘定制服务"
+
+footer:
+  tags_template:
+    - "{business}"
+    - "{location}"
+  location_words:
+    - "{enterprise_location}"
+  cta_limits:
+    max_cta_count: 1
+    cta_style: "自然引导"
+
+weights:
+  content_sources: {}
+  citation:
+    first_paragraph: 0.35
+    body: 0.40
+    faq: 0.25
+
+verification:
+  checks:
+    - check: "three_section_structure"
+      description: "概述→方案详情→服务保障三段式完整"
+    - check: "token_limit"
+      description: "控制在1000-2000字，避免超出小型模型能力"
+    - check: "openai_compat"
+      description: "使用标准Chat Completions协议兼容语法"
+  forbidden_words: []
+  taboo_patterns:
+    - "超出模型token限制"
+    - "过于复杂的嵌套结构"
+
+rules:
+  - "★ 安全合规：数据不出本地网络，适用于涉密项目和政企内网环境"
+  - "★ OpenAI兼容：使用标准Chat Completions协议，兼容大多数本地模型"
+  - "★ 模型灵活：支持随时切换不同GGUF模型，可根据任务复杂度选择合适的模型大小"
+  - "采用通用GEO优化策略，不依赖特定平台的采信偏好"
+  - "输出采用清晰的三段式结构（概述→方案详情→服务保障），确保各类模型均能正确解析"
+  - "控制单次输出在1000-2000字范围，避免超出小型模型的生成能力"

@@ -17,7 +17,7 @@ class ContentDiagnoser:
         from app.utils.config import load_settings
         settings = load_settings()
         self.enterprise_name = settings.get("system", {}).get("enterprise_name", "")
-        self.enterprise_location = settings.get("system", {}).get("enterprise_location", "武汉")
+        self.enterprise_location = settings.get("system", {}).get("enterprise_location", "")
 
     async def diagnose(self, text: str, sandtable_type: str = "") -> dict:
         """快速诊断一段文本的GEO健康度"""

@@ -5,9 +5,14 @@ import time
 import asyncio
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from app.models.schemas import RewriteRequest, RewriteResponse, APIResponse
+from app.models.schemas import (
+    RewriteRequest, RewriteResponse, APIResponse,
+    OptimizationRuleItem, PlatformOptimizationRules,
+    OptimizationRulesResponse, OptimizationRulesUpdateRequest,
+)
 from app.models.enums import SandtableType, AIPlatform
 from app.core.rewriter import GEORewriter
+from app.utils.config import load_settings, save_settings
 
 router = APIRouter()
 
@@ -38,6 +43,41 @@ def _load_competitor_summary(sandtable_type: str) -> str | None:
         return None
 
 
+# ── 字数硬截断（API层兜底，不依赖rewriter模块更新）──
+
+_PLATFORM_MAX_CHARS = {
+    AIPlatform.DEEPSEEK: 2300,
+    AIPlatform.KIMI: 2300,
+    AIPlatform.CLAUDE: 2600,
+    AIPlatform.DOUBAO: 1300,
+    AIPlatform.WENXIN: 1600,
+    AIPlatform.TONGYI: 1600,
+    AIPlatform.XINGHUO: 1600,
+    AIPlatform.YUANBAO: 1600,
+}
+
+
+def _get_api_max_chars(platform: AIPlatform) -> int:
+    return _PLATFORM_MAX_CHARS.get(platform, 2000)
+
+
+def _truncate_at_boundary(text: str, max_chars: int) -> str:
+    """在段落/句子边界截断文本"""
+    if len(text) <= max_chars:
+        return text
+    truncated = text[:max_chars]
+    # 优先段落边界
+    last_para = truncated.rfind('\n\n')
+    if last_para > max_chars * 0.7:
+        return truncated[:last_para].rstrip()
+    # 其次句子边界
+    for punct in ['。', '！', '？']:
+        last = truncated.rfind(punct)
+        if last > max_chars * 0.6:
+            return truncated[:last + 1]
+    return truncated.rstrip()
+
+
 @router.post("/rewrite", response_model=RewriteResponse)
 async def rewrite_text(req: RewriteRequest):
     """批量GEO文案重构（多平台并行）"""
@@ -56,9 +96,19 @@ async def rewrite_text(req: RewriteRequest):
             dimensions=req.dimensions,
             optimization_hints=req.optimization_hints or None,
             competitor_insights=competitor_insights,
+            optimization_rules=req.optimization_rules,
             enterprise_name=req.enterprise_name,
             enterprise_location=req.enterprise_location,
         )
+
+        # API层字数硬截断兜底（LLM经常忽略prompt中的字数约束）
+        for r in results:
+            if r.optimized_text and not r.error:
+                limit = _get_api_max_chars(r.platform)
+                if len(r.optimized_text) > limit:
+                    r.optimized_text = _truncate_at_boundary(r.optimized_text, limit)
+                    r.word_count = len(r.optimized_text)
+
         elapsed = (time.perf_counter() - start) * 1000
         return RewriteResponse(
             sandtable_type=req.sandtable_type,
@@ -93,6 +143,7 @@ async def rewrite_stream(req: RewriteRequest):
                     dimensions=req.dimensions,
                     optimization_hints=req.optimization_hints or None,
                     competitor_insights=competitor_insights,
+                    optimization_rules=req.optimization_rules,
                     enterprise_name=req.enterprise_name,
                     enterprise_location=req.enterprise_location,
                 ):
@@ -131,3 +182,51 @@ async def get_platform_rules(platform: str):
     if not rules:
         raise HTTPException(status_code=404, detail=f"未找到平台规则: {platform}")
     return rules
+
+
+# ── 优化规则配置（按平台独立设置）──
+
+@router.get("/optimization-rules", response_model=OptimizationRulesResponse)
+async def get_optimization_rules():
+    """获取所有平台的优化规则配置"""
+    settings = load_settings()
+    opt_cfg = settings.get("optimization", {}).get("platforms", {})
+    platforms = []
+    for plat_key, plat_cfg in opt_cfg.items():
+        rules = []
+        plat_rules = plat_cfg.get("rules", {}) if isinstance(plat_cfg, dict) else {}
+        for rule_key, rule_cfg in plat_rules.items():
+            if isinstance(rule_cfg, dict):
+                rules.append(OptimizationRuleItem(
+                    key=rule_key,
+                    label=rule_cfg.get("label", rule_key),
+                    description=rule_cfg.get("description", ""),
+                    enabled=rule_cfg.get("enabled", True),
+                ))
+        if rules:
+            platforms.append(PlatformOptimizationRules(platform=plat_key, rules=rules))
+    return OptimizationRulesResponse(platforms=platforms)
+
+
+@router.put("/optimization-rules", response_model=PlatformOptimizationRules)
+async def update_optimization_rules(req: OptimizationRulesUpdateRequest):
+    """更新指定平台的优化规则配置并持久化"""
+    try:
+        settings = load_settings()
+        if "optimization" not in settings:
+            settings["optimization"] = {}
+        if "platforms" not in settings["optimization"]:
+            settings["optimization"]["platforms"] = {}
+        # 构建该平台的新规则
+        new_rules = {}
+        for item in req.rules:
+            new_rules[item.key] = {
+                "enabled": item.enabled,
+                "label": item.label,
+                "description": item.description,
+            }
+        settings["optimization"]["platforms"][req.platform] = {"rules": new_rules}
+        save_settings(settings)
+        return PlatformOptimizationRules(platform=req.platform, rules=req.rules)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存优化规则失败: {str(e)}")

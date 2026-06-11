@@ -1,0 +1,12 @@
+{"timestamp": "2026-06-03 08:05:44", "method": "GET", "path": "/api/evaluate/dimensions", "client_ip": "127.0.0.1", "status": 200, "duration_ms": 16.3}
+{"timestamp": "2026-06-03 08:05:44", "method": "GET", "path": "/api/config/llm", "client_ip": "127.0.0.1", "status": 200, "duration_ms": 16.42}
+{"timestamp": "2026-06-03 08:05:44", "method": "GET", "path": "/api/seo/analysis", "client_ip": "127.0.0.1", "status": 200, "duration_ms": 9.73}
+{"timestamp": "2026-06-03 08:06:21", "method": "POST", "path": "/api/geo/rewrite/stream", "client_ip": "127.0.0.1", "status": 200, "duration_ms": 26596.78}
+{"timestamp": "2026-06-03 08:06:33", "method": "GET", "path": "/api/versions/workshop_smart_industry", "client_ip": "127.0.0.1", "status": 200, "duration_ms": 17.63}
+{"timestamp": "2026-06-03 10:15:13", "method": "GET", "path": "/api/config/llm", "client_ip": "127.0.0.1", "status": 200, "duration_ms": 158.08}
+{"timestamp": "2026-06-03 10:15:21", "method": "GET", "path": "/api/templates/list", "client_ip": "127.0.0.1", "status": 200, "duration_ms": 18.04}
+{"timestamp": "2026-06-03 10:15:21", "method": "GET", "path": "/api/templates/standards/list", "client_ip": "127.0.0.1", "status": 200, "duration_ms": 1.95}
+{"timestamp": "2026-06-03 10:44:15", "method": "GET", "path": "/api/templates/standards/list", "client_ip": "127.0.0.1", "status": 200, "duration_ms": 8.02}
+{"timestamp": "2026-06-03 10:44:15", "method": "GET", "path": "/api/templates/list", "client_ip": "127.0.0.1", "status": 200, "duration_ms": 26.83}
+{"timestamp": "2026-06-03 10:44:15", "method": "GET", "path": "/api/templates/standards/list", "client_ip": "127.0.0.1", "status": 200, "duration_ms": 2.75}
+{"timestamp": "2026-06-03 10:44:15", "method": "GET", "path": "/api/templates/list", "client_ip": "127.0.0.1", "status": 200, "duration_ms": 16.53}

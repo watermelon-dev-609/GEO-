@@ -1,0 +1,9 @@
+[
+  {
+    "timestamp": "2026-05-30 17:20:34",
+    "platform": "deepseek",
+    "action": "rewrite",
+    "estimated_tokens": 500,
+    "estimated_cost": 0.00075
+  }
+]
