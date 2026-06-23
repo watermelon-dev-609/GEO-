@@ -25,9 +25,9 @@ class TestConstants:
         assert "doubao" in TEST_PLATFORMS
         assert "deepseek" in TEST_PLATFORMS
 
-    def test_all_8_sandtable_types_covered(self):
+    def test_all_9_sandtable_types_covered(self):
         sandtables = {q["sandtable"] for q in TEST_QUERIES}
-        assert len(sandtables) == 8
+        assert len(sandtables) == 9
 
     def test_structure_labels_count(self):
         assert len(STRUCTURE_LABELS) == 10

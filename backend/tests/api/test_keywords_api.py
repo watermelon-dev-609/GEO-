@@ -19,7 +19,7 @@ class TestKeywordsModuleIntegrity:
 
     def test_sandtable_types_count(self):
         from app.api.keywords import SANDBTABLE_TYPES
-        assert len(SANDBTABLE_TYPES) == 8
+        assert len(SANDBTABLE_TYPES) == 9
 
     def test_preloaded_keywords_exist(self):
         from app.api.keywords import PRELOADED_KEYWORDS

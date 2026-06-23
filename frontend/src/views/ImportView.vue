@@ -20,13 +20,13 @@
                 drag
                 :auto-upload="false"
                 :on-change="handleFileChange"
-                accept=".txt,.md,.docx"
+                accept=".txt,.md,.docx,.pdf"
                 :limit="5"
               >
                 <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
                 <div>将文件拖到此处，或点击上传</div>
                 <template #tip>
-                  <div class="el-upload__tip">支持 .txt .md .docx 格式</div>
+                  <div class="el-upload__tip">支持 .txt .md .docx .pdf 格式，最大10MB</div>
                 </template>
               </el-upload>
               <div v-if="fileContent" class="file-preview">
@@ -164,6 +164,17 @@
               </el-tag>
             </div>
 
+            <!-- 清洗安全检查警告 -->
+            <el-alert
+              v-for="(w, i) in cleaningWarnings"
+              :key="i"
+              :title="w"
+              type="warning"
+              show-icon
+              :closable="false"
+              style="margin-bottom: 8px;"
+            />
+
             <!-- 清洗前后对比 -->
             <el-tabs v-model="viewMode" type="card" size="small">
               <el-tab-pane label="清洗后结果" name="cleaned">
@@ -217,7 +228,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
-import { cleanText, quickDiagnosis, getCleaningRules, updateCleaningRules } from '../api'
+import { cleanText, quickDiagnosis, getCleaningRules, updateCleaningRules, importFile } from '../api'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Setting } from '@element-plus/icons-vue'
 import { SANDTABLE_TYPES, DIAGNOSIS_LABELS } from '../constants'
@@ -232,6 +243,7 @@ const sandtableType = ref('')
 const isCleaning = ref(false)
 const cleanedText = ref('')
 const beforeText = ref('')
+const cleaningWarnings = ref([])
 const viewMode = ref('cleaned')
 const dimensions = ref(null)
 const detectedType = ref('')
@@ -294,24 +306,48 @@ const dimList = [
 
 async function handleFileChange(file) {
   const raw = file.raw
+  if (!raw) return
   const ext = raw.name.split('.').pop()?.toLowerCase()
 
-  if (ext === 'docx') {
+  // PDF 和 Word 文件通过后端解析（支持复杂格式和PDF文字提取）
+  if (ext === 'pdf' || ext === 'docx') {
     try {
-      const mammoth = await import('mammoth')
-      const arrayBuffer = await raw.arrayBuffer()
-      const result = await mammoth.extractRawText({ arrayBuffer })
-      fileContent.value = result.value
-      rawText.value = result.value
-      if (result.messages?.length) {
-        ElMessage.info('Word文档已解析，部分格式可能已简化')
+      ElMessage.info(`正在解析${ext.toUpperCase()}文件...`)
+      const res = await importFile(raw)
+      const data = res.data
+      fileContent.value = data.text
+      rawText.value = data.text
+      const warnings = data.warnings || []
+      if (warnings.length > 0) {
+        ElMessage.warning(`文件已解析，注意：${warnings.join('; ')}`)
+      } else {
+        ElMessage.success(`${ext.toUpperCase()}文件解析成功（${data.word_count}字，${data.parse_method}）`)
       }
     } catch (e) {
-      ElMessage.error('Word文档解析失败: ' + (e.message || '未知错误'))
+      // 如果后端不可用，docx回退到客户端mammoth解析
+      if (ext === 'docx') {
+        ElMessage.info('后端解析不可用，使用本地解析...')
+        try {
+          const mammoth = await import('mammoth')
+          const arrayBuffer = await raw.arrayBuffer()
+          const result = await mammoth.extractRawText({ arrayBuffer })
+          fileContent.value = result.value
+          rawText.value = result.value
+          if (result.messages?.length) {
+            ElMessage.info('Word文档已解析，部分格式可能已简化')
+          }
+          return
+        } catch (fallbackErr) {
+          ElMessage.error('Word文档解析失败: ' + (fallbackErr.message || '未知错误'))
+          return
+        }
+      }
+      ElMessage.error(`${ext.toUpperCase()}解析失败: ` + (e.response?.data?.detail || e.message))
     }
     return
   }
 
+  // 纯文本文件：客户端直接读取
   const reader = new FileReader()
   reader.onload = (e) => {
     fileContent.value = e.target.result
@@ -345,7 +381,15 @@ async function startCleaning() {
     store.setSandtableType(res.data.detected_type || sandtableType.value)
     store.setDimensions(res.data.dimensions)
 
-    ElMessage.success(`清洗完成！字数 ${res.data.word_count_before} → ${res.data.word_count_after}`)
+    // 清洗安全检查警告
+    const safetyWarnings = res.data.safety_warnings || []
+    if (safetyWarnings.length > 0) {
+      cleaningWarnings.value = safetyWarnings
+      ElMessage.warning(`清洗完成，但检测到 ${safetyWarnings.length} 个潜在问题，请查看清洗结果`)
+    } else {
+      cleaningWarnings.value = []
+      ElMessage.success(`清洗完成！字数 ${res.data.word_count_before} → ${res.data.word_count_after}`)
+    }
     store.addToHistory({
       name: '文案清洗',
       sandtableType: res.data.detected_type || sandtableType.value || '未知',

@@ -85,6 +85,27 @@ class OptimizationRulesUpdateRequest(BaseModel):
     rules: list[OptimizationRuleItem] = Field(..., description="该平台的规则列表")
 
 
+# ── 发布平台适配（GEO优化→发布平台格式转换）──
+
+class PublishAdaptRequest(BaseModel):
+    """发布适配请求"""
+    optimized_text: str = Field(..., min_length=50, max_length=50000, description="GEO优化后的文案")
+    target_platforms: list[str] = Field(..., min_length=1, description="目标发布平台列表，如 ['wechat_mp','xiaohongshu','official_site']")
+    enterprise_name: str | None = Field(default=None, description="企业名称（不传则使用系统配置）")
+    original_text: str = Field(default="", description="原始文案（提供更多上下文）")
+
+class PublishPlatformResult(BaseModel):
+    """单个发布平台的适配结果"""
+    platform: str = Field(..., description="平台标识")
+    platform_name: str = Field(default="", description="平台中文名")
+    icon: str = Field(default="", description="平台图标emoji")
+    text: str = Field(default="", description="适配后的文本")
+    word_count: int = Field(default=0, description="字数")
+
+class PublishAdaptResponse(BaseModel):
+    """发布适配响应"""
+    results: list[PublishPlatformResult]
+
 class InfoExtractionResponse(BaseModel):
     sandtable_type: SandtableType
     core_advantages: list[str]      # 核心优势
@@ -108,6 +129,8 @@ class RewriteRequest(BaseModel):
     optimization_rules: Optional[dict] = Field(default=None, description="优化规则配置（按平台，可选）")
     enterprise_name: str = Field(default="")
     enterprise_location: str = Field(default="")
+    query_intent: str | None = Field(default=None, description="查询意图：brand_direct(品牌直问)/scenario(场景问询)/product(产品问询)/comparison(对比)/informational(信息问询)，不填默认brand_direct")
+    diversity_seed: str | None = Field(default=None, description="内容多样性种子：tech_deep/case_driven/service_flow/industry_insight/innovation_forward，不填自动选取")
 
 class PlatformRewriteResult(BaseModel):
     platform: AIPlatform
@@ -429,6 +452,78 @@ class MonitorTrendDataPoint(BaseModel):
 class BrandMonitorQueryRequest(BaseModel):
     text: str = Field(..., min_length=1, description="查询文本")
     category: str = Field(default="brand_direct", description="查询分类")
+
+
+# ── 品牌舆情管理 ──
+
+class SentimentResult(BaseModel):
+    """情感+事实分析结果"""
+    polarity: str = Field(default="neutral", description="情感极性: positive/neutral/negative")
+    confidence: float = Field(default=0.0, ge=0, le=100, description="置信度")
+    factual_accuracy: str = Field(default="unverifiable", description="事实准确性")
+    factual_issues: list[dict] = Field(default_factory=list, description="事实核查明细")
+    summary: str = Field(default="", description="一句话概述")
+
+class ReputationIncident(BaseModel):
+    """舆情事件"""
+    incident_id: str = Field(default="", description="事件ID")
+    platform: str = Field(default="", description="AI平台")
+    query: str = Field(default="", description="触发查询")
+    brand_mentioned: bool = Field(default=False, description="品牌是否被提及")
+    sentiment: SentimentResult | None = Field(default=None, description="情感分析结果")
+    ai_response_snippet: str = Field(default="", description="AI回复摘录")
+    severity: str = Field(default="low", description="严重度")
+    status: str = Field(default="open", description="事件状态")
+    created_at: str = Field(default="", description="创建时间")
+    resolved_at: str | None = Field(default=None, description="解决时间")
+    correction_content: str | None = Field(default=None, description="纠正内容")
+    correction_published: bool = Field(default=False, description="纠正是否已发布")
+    notes: list[dict] = Field(default_factory=list, description="处理备注")
+
+class CorrectionRequest(BaseModel):
+    """纠正内容生成请求"""
+    incident_id: str = Field(..., min_length=1, description="事件ID")
+    false_claims: list[str] = Field(default_factory=list, description="需纠正的不实声称")
+    target_platform: str = Field(default="", description="目标AI平台")
+    sandtable_type: str = Field(default="general", description="沙盘类型")
+
+class CorrectionResult(BaseModel):
+    """纠正内容生成结果"""
+    incident_id: str = Field(default="", description="事件ID")
+    original_claim: str = Field(default="", description="原始声称")
+    correction_text: str = Field(default="", description="纠正文本")
+    recommended_channels: list[str] = Field(default_factory=list, description="推荐发布渠道")
+    publish_status: str = Field(default="draft", description="发布状态")
+
+class ReputationStatsResponse(BaseModel):
+    """舆情统计概览"""
+    total_incidents: int = Field(default=0, description="总事件数")
+    open_incidents: int = Field(default=0, description="待处理")
+    critical_incidents: int = Field(default=0, description="严重事件")
+    resolved_this_month: int = Field(default=0, description="本月已解决")
+    positive_rate: float = Field(default=0.0, description="正面情感占比%")
+    negative_rate: float = Field(default=0.0, description="负面情感占比%")
+    by_platform: dict = Field(default_factory=dict, description="按平台统计")
+    by_severity: dict = Field(default_factory=dict, description="按严重度统计")
+    recent_incidents: list[dict] = Field(default_factory=list, description="最近事件")
+
+class SentimentClassifyRequest(BaseModel):
+    """情感分类请求"""
+    response: str = Field(..., min_length=1, description="AI回复文本")
+    query: str = Field(default="", description="触发的用户查询")
+    platform: str = Field(default="", description="来源平台")
+    brand_name: str = Field(default="", description="品牌名（空则用系统配置）")
+
+class IncidentStatusUpdateRequest(BaseModel):
+    """事件状态更新请求"""
+    status: str = Field(..., min_length=1, description="目标状态")
+    notes: str = Field(default="", description="备注")
+
+class ReputationScanRequest(BaseModel):
+    """舆情扫描请求"""
+    sandtable_type: str = Field(default="general", description="沙盘类型")
+    platforms: list[str] = Field(default_factory=list, description="平台列表（空则全平台）")
+    auto_create_incidents: bool = Field(default=True, description="是否自动创建事件")
 
 
 # ── 批量处理 ──

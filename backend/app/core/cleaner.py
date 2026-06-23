@@ -95,6 +95,13 @@ class TextCleaner:
             "word_count_after": len(cleaned.content),
             "processing_time_ms": round(elapsed, 1),
         }
+
+        # ── 清洗后安全检查：关键信息是否被误删 ──
+        safety_warnings = _check_cleaning_safety(content, cleaned.content.strip())
+        if safety_warnings:
+            result["safety_warnings"] = safety_warnings
+            logger.warning(f"清洗安全检查发现问题: {'; '.join(safety_warnings)}")
+
         geo_cache.set(cache_key, result)
         return result
 
@@ -205,3 +212,42 @@ class TextCleaner:
             result = empty_dimensions_with_extras()
             result["_raw"] = raw
             return result
+
+
+# ── 清洗安全校验 ──
+
+def _check_cleaning_safety(original: str, cleaned: str) -> list[str]:
+    """检查清洗后关键信息是否被误删"""
+    import re
+    warnings = []
+
+    # 1. 检查企业名是否保留
+    enterprise_name = get_enterprise_name()
+    if enterprise_name and len(enterprise_name) >= 4:
+        if enterprise_name in original and enterprise_name not in cleaned:
+            warnings.append(f"⚠️ 企业名称「{enterprise_name}」在清洗后被删除，请检查清洗结果")
+
+    # 2. 检查量化数据（数字+单位）是否被大量删除
+    quant_pat = re.compile(r'\d+[+]?\s*(?:个|项|套|年|万|亿|%|人|次|㎡|平方米|公里|mm|cm|m|km)')
+    orig_quants = set(quant_pat.findall(original))
+    clean_quants = set(quant_pat.findall(cleaned))
+    lost_quants = orig_quants - clean_quants
+    if len(lost_quants) >= 3:
+        warnings.append(f"⚠️ {len(lost_quants)}个量化数据在清洗后丢失，可能包含重要信息: {', '.join(sorted(lost_quants)[:3])}...")
+
+    # 3. 检查联系方式/URL是否保留
+    contact_pat = re.compile(r'(?:https?://|www\.|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|1[3-9]\d{9}|0\d{2,3}[-\s]?\d{7,8})')
+    orig_contact = set(contact_pat.findall(original))
+    clean_contact = set(contact_pat.findall(cleaned))
+    if orig_contact and not clean_contact:
+        warnings.append("⚠️ 联系方式/网址在清洗后全部丢失")
+
+    # 4. 检查认证/资质关键词
+    cert_keywords = ['ISO', '认证', '专利', '高新技术企业', '资质', '获奖', '国高新']
+    orig_certs = [k for k in cert_keywords if k in original]
+    for c in orig_certs:
+        if c not in cleaned:
+            warnings.append(f"⚠️ 资质/认证关键词「{c}」在清洗后丢失，可能误删了重要背书信息")
+            break
+
+    return warnings

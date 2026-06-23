@@ -1,0 +1,30 @@
+{
+  "incident_id": "inc_20260615_125049_1afeb173",
+  "platform": "deepseek",
+  "query": "test",
+  "brand_mentioned": false,
+  "sentiment": null,
+  "ai_response_snippet": "test",
+  "severity": "low",
+  "status": "open",
+  "created_at": "2026-06-15T12:50:49.538450+00:00",
+  "resolved_at": null,
+  "correction_content": "这是纠正内容：关于微艺达的不实信息需要进行澄清。",
+  "correction_published": false,
+  "timeline": [
+    {
+      "timestamp": "2026-06-15T12:50:49.538450+00:00",
+      "action": "created",
+      "status": "open",
+      "notes": "自动创建 - 严重度: low"
+    },
+    {
+      "timestamp": "2026-06-15T12:50:49.541839+00:00",
+      "action": "correction_generated",
+      "status": "open",
+      "notes": "已生成纠正内容"
+    }
+  ],
+  "notes": [],
+  "extra": {}
+}

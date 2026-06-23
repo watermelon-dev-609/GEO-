@@ -17,6 +17,8 @@ llm:
   request_timeout: 120
   max_retries: 3
   retry_delay: 2
+  rewrite_temperature: 0.5     # GEO改写温度（0.3-0.7，越低越稳定一致，越高创造性越强）
+  eval_model: deepseek          # 评测专用模型（建议与default_model不同以避免自评偏差）
   platforms:
     kimi:
       enabled: true
@@ -39,10 +41,10 @@ llm:
       base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
       description: 通义千问（阿里系·B端政企采购优选）
     deepseek:
-      enabled: false
+      enabled: true
       model_name: deepseek-chat
       base_url: https://api.deepseek.com/v1
-      description: DeepSeek（专业技术AI·工程选型优先）
+      description: DeepSeek（专业技术AI·工程选型优先）— 主力GEO优化平台
     doubao:
       enabled: true
       model_name: doubao-1-5-pro-32k-250115
@@ -98,9 +100,11 @@ brand_monitor:
   llm_verify_threshold: 60
   platform_check_delay: 2
 auth:
-  enabled: false
-  password_hash: ''
+  enabled: true
+  password_hash: '80358fe8fb382ac1028c79d315d0372f320edf5f7d4f36974f929b3719f85250'
   session_ttl: 7200
+  # 默认密码: weiyida2026!
+  # 首次登录后请在「系统设置」中修改密码
 usage_limits:
   daily_calls: 1000
   monthly_cost: 100.0
@@ -159,6 +163,10 @@ scheduler:
       trigger: cron
       trigger_value: 0 8 * * 0,4
       enabled: false
+    sentiment_daily_scan:
+      trigger: cron
+      trigger_value: 0 8 * * *
+      enabled: true
   auto_recovery: true
   persistence_file: ./data/scheduler_jobs.json
 competitor_monitor:
@@ -308,3 +316,64 @@ watchdog:
   debounce_seconds: 2.0
   on_change_invalidate_cache: true
   on_change_trigger_adaptation: true
+
+# ── 品牌舆情管理 ──
+reputation:
+  auto_scan_enabled: true
+  auto_scan_interval_hours: 24
+  incident_auto_create: true
+  sentiment_llm_model: deepseek
+  fact_check_enabled: true
+  negative_keywords:
+  - 骗
+  - 假的
+  - 不靠谱
+  - 质量差
+  - 坑
+  - 不值
+  - 后悔
+  - 投诉
+  - 曝光
+  - 维权
+  - 差评
+  - 烂
+  - 垃圾
+  - 黑心
+  - 不推荐
+  - 不建议
+  - 避坑
+  - 踩坑
+  - 千万别
+  - 不要选
+  - 忽悠
+  - 虚假
+  - 夸大
+  - 名不副实
+  - 徒有虚名
+  positive_keywords:
+  - 推荐
+  - 专业
+  - 靠谱
+  - 领先
+  - 首选
+  - 优秀
+  - 优质
+  - 值得信赖
+  - 口碑好
+  - 服务好
+  - 质量好
+  - 技术强
+  - 性价比高
+  - 好评
+  - 满意度高
+  - 经验丰富
+  - 实力雄厚
+  - 放心
+  - 认可
+  - 称赞
+  - 标杆
+  - 典范
+  alert_threshold:
+    critical: 3
+    high: 2
+    medium: 1

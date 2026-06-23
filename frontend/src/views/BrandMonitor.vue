@@ -181,11 +181,28 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column label="情感" width="70" align="center">
+              <template #default="scope">
+                <el-tag v-if="scope.row.sentiment" size="small"
+                  :type="scope.row.sentiment.polarity === 'positive' ? 'success' : scope.row.sentiment.polarity === 'negative' ? 'danger' : 'info'">
+                  {{ scope.row.sentiment.polarity === 'positive' ? '正面' : scope.row.sentiment.polarity === 'negative' ? '负面' : '中性' }}
+                </el-tag>
+                <span v-else style="color:#c0c4cc;">—</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="mention_score" label="评分" width="60" align="center" />
             <el-table-column label="引用片段" min-width="180">
               <template #default="scope">
                 <span v-if="scope.row.mention_context" class="mention-ctx">{{ scope.row.mention_context }}</span>
                 <span v-else style="color: #c0c4cc;">—</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="100" align="center">
+              <template #default="scope">
+                <el-button v-if="scope.row.sentiment?.polarity === 'negative' || scope.row.sentiment?.factual_accuracy === 'inaccurate'"
+                  link type="danger" size="small" @click="flagToReputation(scope.row)">
+                  标记舆情
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -195,6 +212,84 @@
         </div>
       </div>
     </el-dialog>
+
+    <!-- ═══ 真实AI收录搜索 ═══ -->
+    <el-card shadow="never" style="margin-top: 20px;">
+      <template #header>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span>🔍 真实AI收录搜索 — 实际调用AI平台API检索品牌</span>
+          <el-tag size="small" type="success" effect="plain">实际API调用</el-tag>
+        </div>
+      </template>
+
+      <el-alert type="info" :closable="false" style="margin-bottom:16px;">
+        <strong>与上方「全量检测」的区别</strong>：上方检测使用LLM模拟评估，本功能实际调用各AI平台的Chat API发送真实搜索查询，解析返回结果中是否包含你的品牌。结果更接近真实AI收录数据。
+      </el-alert>
+
+      <el-row :gutter="12">
+        <el-col :span="6">
+          <el-select v-model="realSearchSandtable" style="width:100%" placeholder="沙盘类型">
+            <el-option v-for="t in SANDBTABLE_TYPES" :key="t.value" :label="t.label" :value="t.value" />
+          </el-select>
+        </el-col>
+        <el-col :span="12">
+          <el-checkbox-group v-model="realSearchPlatforms">
+            <el-checkbox v-for="p in availablePlatforms" :key="p.value" :value="p.value" :label="p.label" />
+          </el-checkbox-group>
+        </el-col>
+        <el-col :span="6">
+          <el-button type="primary" :loading="realSearchLoading" @click="runRealSearch" style="width:100%">
+            {{ realSearchLoading ? '搜索中...' : '开始真实搜索' }}
+          </el-button>
+        </el-col>
+      </el-row>
+
+      <!-- 搜索结果 -->
+      <div v-if="realSearchResult" style="margin-top:16px;">
+        <el-divider />
+        <el-alert :title="realSearchResult.summary" :type="realSearchResult.mention_rate >= 50 ? 'success' : realSearchResult.mention_rate >= 20 ? 'warning' : 'danger'" :closable="false" />
+
+        <el-table :data="realSearchPlatformRows" size="small" style="margin-top:12px;">
+          <el-table-column prop="platform" label="AI平台" width="120" />
+          <el-table-column label="提及次数" width="100" align="center">
+            <template #default="scope">{{ scope.row.mentions }}/{{ scope.row.total }}</template>
+          </el-table-column>
+          <el-table-column label="提及率" width="100" align="center">
+            <template #default="scope">
+              <el-tag :type="scope.row.mention_rate >= 50 ? 'success' : scope.row.mention_rate >= 20 ? 'warning' : 'danger'" size="small">
+                {{ scope.row.mention_rate }}%
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="引用率" width="100" align="center">
+            <template #default="scope">
+              {{ scope.row.citation_rate }}%
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" min-width="120">
+            <template #default="scope">
+              <el-tag v-if="scope.row.errors > 0" type="danger" size="small">{{ scope.row.errors }}个错误</el-tag>
+              <el-tag v-else-if="scope.row.mentions === 0" type="warning" size="small">未被提及</el-tag>
+              <el-tag v-else type="success" size="small">已收录</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <!-- 搜索详情 -->
+        <el-collapse style="margin-top:12px;">
+          <el-collapse-item title="查看搜索详情">
+            <div v-for="pq in (realSearchResult.per_query || [])" :key="pq.query" style="margin-bottom:12px;">
+              <div style="font-weight:600;font-size:13px;margin-bottom:4px;">🔎 {{ pq.query }}</div>
+              <div v-for="(item, plat) in (pq.platforms || {})" :key="plat" style="margin-left:16px;margin-bottom:4px;font-size:12px;">
+                <el-tag :type="item.mentioned ? 'success' : 'danger'" size="small" effect="plain">{{ plat }}</el-tag>
+                <span v-if="item.error" style="color:#C5554A;">⚠️ {{ item.error }}</span>
+                <span v-else-if="item.answer_snippet" style="color:#6B6E7B;margin-left:4px;">{{ item.answer_snippet.slice(0, 120) }}{{ item.answer_snippet.length > 120 ? '...' : '' }}</span>
+              </div>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
+      </div>
+    </el-card>
   </div>
 </template>
 
@@ -205,6 +300,7 @@ import { useGeoStore } from '../stores/geo'
 import { Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { SANDTABLE_TYPES, AI_PLATFORMS, QUERY_CATEGORIES, scoreColor } from '../constants'
+import { realSearch, realSearchHistory, getMonitorQueries } from '../api'
 import {
   getMonitorOverview, getMonitorHistory, getMonitorSession,
   runMonitorCheckAll, getMonitorTrend, getLLMConfig,
@@ -228,6 +324,49 @@ const recentSessions = ref([])
 const historyItems = ref([])
 const sessionDetail = ref(null)
 const configuredPlatforms = ref([])
+
+// ── 真实AI收录搜索 ──
+const realSearchSandtable = ref('smart_traffic')
+const realSearchPlatforms = ref(['deepseek', 'kimi', 'doubao'])
+const realSearchLoading = ref(false)
+const realSearchResult = ref(null)
+const realSearchPlatformRows = ref([])
+const availablePlatforms = AI_PLATFORMS.filter(p => !['ollama', 'lmstudio'].includes(p.value))
+
+async function runRealSearch() {
+  if (realSearchPlatforms.value.length === 0) {
+    ElMessage.warning('请至少选择一个AI平台')
+    return
+  }
+  realSearchLoading.value = true
+  realSearchResult.value = null
+  try {
+    const res = await realSearch({
+      sandtable_type: realSearchSandtable.value,
+      platforms: realSearchPlatforms.value,
+    })
+    const data = res.data
+    realSearchResult.value = data
+    // 构建平台行
+    const rows = []
+    for (const [plat, info] of Object.entries(data.per_platform || {})) {
+      rows.push({
+        platform: plat,
+        mentions: info.mentions || 0,
+        total: info.total || 0,
+        mention_rate: info.mention_rate || 0,
+        citation_rate: info.citation_rate || 0,
+        errors: info.errors || 0,
+      })
+    }
+    realSearchPlatformRows.value = rows
+    ElMessage.success(`真实搜索完成：提及率 ${data.mention_rate}%`)
+  } catch (e) {
+    ElMessage.error('真实搜索失败: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    realSearchLoading.value = false
+  }
+}
 
 const SANDBTABLE_TYPES = SANDTABLE_TYPES
 
@@ -354,6 +493,18 @@ function goOptimizeFromMonitor() {
   })
   store.setSelectedPlatforms(failedPlatforms)
   router.push('/workshop')
+}
+
+function flagToReputation(row) {
+  // 跳转到舆情管理页面，携带预填信息
+  router.push({
+    path: '/reputation',
+    query: {
+      platform: row.platform,
+      query: row.query,
+      autoCreate: 'true',
+    },
+  })
 }
 
 onMounted(async () => {

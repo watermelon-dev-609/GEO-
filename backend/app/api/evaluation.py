@@ -19,19 +19,34 @@ router = APIRouter()
 
 
 def _get_evaluator(with_llm: bool = True):
-    """获取评测器实例"""
+    """获取评测器实例 — 优先使用独立的评测模型以避免自评偏差"""
     settings = load_settings()
     api_keys = load_api_keys()
 
     llm = None
     if with_llm:
-        default_platform = settings.get("llm", {}).get("default_model", "deepseek")
-        plat_cfg = settings.get("llm", {}).get("platforms", {}).get(default_platform, {})
-        key_info = api_keys.get("platforms", {}).get(default_platform, {})
+        # 评测专用模型（settings.yaml 中 llm.eval_model），未配置则回退到 default_model
+        eval_platform = settings.get("llm", {}).get("eval_model") or settings.get("llm", {}).get("default_model", "deepseek")
+        plat_cfg = settings.get("llm", {}).get("platforms", {}).get(eval_platform, {})
+        key_info = api_keys.get("platforms", {}).get(eval_platform, {})
 
         api_key = key_info.get("api_key", "")
+        if not api_key or "your-" in api_key:
+            # 评测模型未配置，尝试其他已配置的模型
+            for pk, cfg in settings.get("llm", {}).get("platforms", {}).items():
+                ki = api_keys.get("platforms", {}).get(pk, {})
+                ak = ki.get("api_key", "")
+                if ak and "your-" not in ak:
+                    eval_platform = pk
+                    plat_cfg = cfg
+                    api_key = ak
+                    break
+
         if api_key and "your-" not in api_key:
-            adapter_type = AIPlatform(default_platform).adapter_type
+            try:
+                adapter_type = AIPlatform(eval_platform).adapter_type
+            except ValueError:
+                adapter_type = "openai_compat"
             llm = LLMFactory.create(
                 platform=adapter_type,
                 api_key=api_key,
@@ -40,6 +55,7 @@ def _get_evaluator(with_llm: bool = True):
             )
             if adapter_type == "wenxin":
                 llm.secret_key = key_info.get("secret_key", "")
+            logger.info(f"评测使用模型: {eval_platform} ({plat_cfg.get('model_name', '')})")
 
     return AIEvaluator(llm_adapter=llm)
 

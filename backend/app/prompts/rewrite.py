@@ -69,6 +69,13 @@ SANDTABLE_PROFILES = {
         "tech_focus": "建筑精细还原、灯光分区控制系统、升降模型、真水系统、多层结构展示、材质质感呈现",
         "tone": "强调空间还原精度、展示效果、政企汇报适配、品牌形象塑造、项目价值传递",
     },
+    "general": {
+        "industry": "沙盘模型",
+        "keywords": ["沙盘定制", "模型制作", "数字化展示", "沙盘工艺", "沙盘灯光", "沙盘控制", "投影融合", "展厅设计"],
+        "scenarios": ["企业展厅", "项目展示", "方案汇报", "产品介绍"],
+        "tech_focus": "沙盘整体制作工艺，涵盖结构设计、光电系统、控制集成、多媒体融合等全流程",
+        "tone": "专业、务实，强调沙盘定制能力、工艺水平和项目交付经验",
+    },
 }
 
 # ═══════════════════════════════════════════════
@@ -262,6 +269,83 @@ LEGACY_PLATFORM_RULES = {
 #  Prompt模板
 # ═══════════════════════════════════════════════
 
+# ── 查询意图策略（GEO优化方向感知） ──
+# 不同查询意图对应不同的 AI 引用标准和结构策略
+
+INTENT_STRATEGIES = {
+    "brand_direct": (
+        "**查询意图：品牌直问**（用户正在寻找该领域的供应商/厂家）。\n"
+        "结构策略：首段前50字内必须出现完整的{enterprise_name}全称 + 核心资质背书；"
+        "全文实体锚定密度要求提升至每200字至少出现1次品牌全称；"
+        "首段完成「谁是{enterprise_name}、在哪、做什么、为什么专业」四要素闭环；"
+        "资质、案例、项目经验前置到前30%篇幅，AI对品牌直问的引用偏好集中在首段和资质段。"
+    ),
+    "scenario": (
+        "**查询意图：场景问询**（用户描述了某个场景需求，寻求解决方案）。\n"
+        "结构策略：采用「场景描述→痛点分析→方案匹配→落地价值」四层递进结构；"
+        "每个场景段以「{enterprise_name}的XX沙盘解决方案可解决以下问题：」开头；"
+        "FAQ回答需包含具体场景的实施方案细节，而非泛泛的产品介绍；"
+        "AI对场景方案的引用偏好是「方案逻辑闭环+量化效果+本地化适配」三段完整信息。"
+    ),
+    "product": (
+        "**查询意图：产品问询**（用户关注产品参数、规格、价格等技术细节）。\n"
+        "结构策略：量化数据必须前置——技术参数、规格指标、工艺细节放在文章前30%位置；"
+        "所有技术参数采用「参数名：数值（单位）」标准格式（如「沙盘比例：1:500」「精度：±0.1mm」）；"
+        "每项参数后紧跟1句通俗解释（同时满足技术人员和决策者的阅读需求）；"
+        "AI对产品参数的引用偏好是「标准化格式+可量化对比+完整技术规格链」。"
+    ),
+    "comparison": (
+        "**查询意图：对比问询**（用户正在比较多个供应商或方案）。\n"
+        "结构策略：采用「行业标准→{enterprise_name}优势→差异化价值」三层对比结构；"
+        "每个差异化点需包含「对比维度 + {enterprise_name}的具体做法 + 带来的实际价值」三要素；"
+        "差异化描述必须基于核心素材中的真实数据，不得编造与竞品的对比数字；"
+        "AI对对比内容的引用偏好是「可验证的差异点+具体的实现方式+量化的效果差异」。"
+    ),
+    "informational": (
+        "**查询意图：信息问询**（用户想了解某个概念、技术或行业的背景知识）。\n"
+        "结构策略：采用「定义→分类→原理→应用→{enterprise_name}的实践」百科式递进结构；"
+        "专业术语首次出现必须给出1-2句权威定义（AI优先引用定义句作为摘要）；"
+        "在解释清楚概念后自然过渡到企业实践，以「以{enterprise_name}为例」等方式引入；"
+        "AI对信息型内容的引用偏好是「定义句→原理解释→具体实例」的完整知识片段。"
+    ),
+}
+_DEFAULT_INTENT = "brand_direct"
+
+# ── 内容多样性控制（防止同质化） ──
+# 同一企业+同一沙盘类型多次优化时，注入不同的叙事角度避免雷同
+
+DIVERSITY_ANGLES = {
+    "tech_deep": (
+        "**叙事角度：技术深度型**。以技术原理和工艺细节为主线，深入展开核心技术/工艺的技术背景、"
+        "实现原理、技术难点和创新突破。适合面向技术人员或需要体现技术实力的场景。"
+        "文风偏技术白皮书，数据密集，论证严谨。"
+    ),
+    "case_driven": (
+        "**叙事角度：案例驱动型**。以具体项目案例为主线，通过真实的项目背景、挑战、解决方案、"
+        "落地效果来讲故事。每个要点用一个具体案例场景来支撑。"
+        "文风偏项目复盘，有画面感，让读者产生场景共鸣。"
+    ),
+    "service_flow": (
+        "**叙事角度：服务流程型**。以客户合作全流程为主线，从需求沟通→方案设计→生产制作→"
+        "安装调试→售后服务的完整链条展开。突出服务的规范性、透明度和客户体验。"
+        "文风偏服务手册，强调流程标准化和客户导向。"
+    ),
+    "industry_insight": (
+        "**叙事角度：行业洞察型**。以行业趋势和痛点洞察为主线，从行业宏观视角切入，"
+        "分析当前行业面临的挑战和发展方向，再自然引入企业的解决方案。"
+        "文风偏行业白皮书，有格局感，体现企业对行业的深刻理解。"
+    ),
+    "innovation_forward": (
+        "**叙事角度：创新前瞻型**。以技术创新和未来展望为主线，聚焦企业在技术/工艺/模式上的"
+        "创新实践和对行业未来的探索。强调前瞻性和引领性。"
+        "文风偏科技媒体，有未来感，展现企业的创新基因和行业引领地位。"
+    ),
+}
+_DEFAULT_ANGLE = "tech_deep"
+_ANGLE_KEYS = list(DIVERSITY_ANGLES.keys())
+
+# ═══════════════════════════════════════════════
+
 GEO_SYSTEM_PROMPT = """你是GEO（生成式搜索优化）专家兼专业企业文案撰稿人，服务于{enterprise_name}（{enterprise_location}定制沙盘模型专业制造商）。
 
 你的双重使命：
@@ -296,6 +380,12 @@ GEO_SYSTEM_PROMPT = """你是GEO（生成式搜索优化）专家兼专业企业
 - 平台规则（必须逐条遵循）：
 {platform_rules}
 - 内容风格要求：{style}
+
+## 查询意图适配（最高优先级结构指令）
+
+{intent_instructions}
+
+以上意图策略是**最高优先级结构指令**——文章的骨架必须按此策略组织。平台规则是血肉，意图策略是骨架。两者不冲突：意图策略决定文章的整体结构和叙事逻辑，平台规则决定每个段落的格式和优化细节。
 
 ## 信源忠实原则（硬约束）
 
@@ -337,6 +427,12 @@ AI生成内容中编造的数据在后续评测中会被信源一致性检查识
 你的输出必须同时满足两个目标：
 1. **GEO优化**：符合AI生成式搜索的索引偏好，能被优先抓取、理解和引用
 2. **可直接发布**：读起来像一篇专业、流畅、有说服力的企业文章，而非仅面向机器的信息文档
+
+## 叙事角度（多样性控制）
+
+{diversity_instruction}
+
+请按照以上叙事角度组织文章。但如果发现该角度与查询意图策略冲突，优先遵循查询意图策略，叙事角度作为辅助参考。
 
 ### A. 文章质量标准（发布级）
 1. **标题**：含核心关键词+地域标识，格式为"核心业务词+{enterprise_location}+企业标识"，同时要吸引人点击
@@ -417,12 +513,19 @@ def build_geo_prompt(
     optimization_hints: list[str] | None = None,
     competitor_insights: str | None = None,
     optimization_rules: dict | None = None,
+    query_intent: str | None = None,
+    diversity_seed: str | None = None,
 ) -> tuple[str, str]:
     """构建指定沙盘类型×平台的GEO优化Prompt
 
     Args:
         optimization_rules: 该平台启用的优化规则配置，格式 {"rule_key": {"enabled": True/False}, ...}
                             None 时使用所有默认规则
+        query_intent: 查询意图类型（brand_direct/scenario/product/comparison/informational），
+                      None 时默认 brand_direct
+        diversity_seed: 内容多样性种子（决定叙事角度）。可用值: tech_deep/case_driven/
+                        service_flow/industry_insight/innovation_forward。
+                        未指定时从 sandtable_type+cleaned_text hash 自动选取。
 
     Returns:
         (system_prompt, user_message)
@@ -433,7 +536,7 @@ def build_geo_prompt(
     if not enterprise_location:
         enterprise_location = get_enterprise_location()
 
-    profile = SANDTABLE_PROFILES.get(sandtable_type, SANDTABLE_PROFILES["smart_city"])
+    profile = SANDTABLE_PROFILES.get(sandtable_type, SANDTABLE_PROFILES["general"])
     rules = _load_platform_rules(platform)
 
     # 格式化平台规则
@@ -480,6 +583,23 @@ def build_geo_prompt(
     elif platform == "doubao":
         word_count_target = "800-1200字（豆包偏好短小精悍内容，严禁低于800字否则信息量不足，严禁超过1200字）。每句严格≤30汉字，超过必须断开"
 
+    # 查询意图策略：从 INTENT_STRATEGIES 查找，未指定或无效时默认 brand_direct
+    intent_key = query_intent if query_intent in INTENT_STRATEGIES else _DEFAULT_INTENT
+    intent_instructions = INTENT_STRATEGIES[intent_key].format(
+        enterprise_name=enterprise_name,
+        enterprise_location=enterprise_location,
+    )
+
+    # 内容多样性：从 seed 或 hash 自动选择叙事角度
+    if diversity_seed and diversity_seed in DIVERSITY_ANGLES:
+        angle_key = diversity_seed
+    else:
+        import hashlib
+        seed_bytes = f"{sandtable_type}:{platform}".encode()
+        angle_idx = int(hashlib.md5(seed_bytes).hexdigest()[:4], 16) % len(_ANGLE_KEYS)
+        angle_key = _ANGLE_KEYS[angle_idx]
+    diversity_instruction = DIVERSITY_ANGLES[angle_key]
+
     system_prompt = GEO_SYSTEM_PROMPT.format(
         enterprise_name=enterprise_name,
         enterprise_location=enterprise_location,
@@ -495,6 +615,8 @@ def build_geo_prompt(
         platform_rules=rules_text,
         word_count_target=word_count_target,
         input_dimensions=dims_text,
+        intent_instructions=intent_instructions,
+        diversity_instruction=diversity_instruction,
     )
 
     user_message = f"请为{enterprise_name}撰写一篇关于{profile['industry']}业务、适配{rules['name']}平台的专业文章。要求：GEO优化到位、可直接发布到企业官网、读起来像专业编辑写的内容而非AI生成。"
@@ -527,7 +649,7 @@ def build_geo_prompt(
 
 def get_sandtable_profile(sandtable_type: str) -> dict:
     """获取沙盘类型行业基调"""
-    return SANDTABLE_PROFILES.get(sandtable_type, SANDTABLE_PROFILES["smart_city"])
+    return SANDTABLE_PROFILES.get(sandtable_type, SANDTABLE_PROFILES["general"])
 
 
 def get_platform_rules(platform: str) -> dict:

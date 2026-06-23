@@ -4,6 +4,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Query
 from app.core.scheduler import get_scheduler, create_job, delete_job, toggle_job, list_jobs
 from app.core.anomaly_detector import detect_anomalies
+from app.core.citation_tester import get_latest_drift_report, list_citation_tests
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -78,6 +79,33 @@ async def get_anomalies():
     except Exception as e:
         logger.exception("获取异常告警失败")
         return {"alerts": [], "count": 0, "error": str(e)}
+
+
+@router.get("/citation-drift")
+async def citation_drift_report():
+    """AI平台采信行为漂移检测报告
+
+    对比最近两次 citation test 结果，检测各 AI 平台的结构特征偏好、来源偏好、
+    时效偏好是否发生显著变化。变化超过阈值时生成告警+建议更新对应 YAML 规则。
+    每周自动运行一次（citation_weekly_test 定时任务），也可手动触发。
+    """
+    try:
+        report = get_latest_drift_report()
+        return report
+    except Exception as e:
+        logger.exception("获取漂移检测报告失败")
+        return {"alerts": [], "total_alerts": 0, "error": str(e)}
+
+
+@router.get("/citation-tests")
+async def list_tests(days: int = 90):
+    """列出最近的AI采信测试记录"""
+    try:
+        tests = list_citation_tests(days=days)
+        return {"tests": tests, "count": len(tests)}
+    except Exception as e:
+        logger.exception("获取采信测试列表失败")
+        return {"tests": [], "count": 0, "error": str(e)}
 
 
 @router.get("/status")

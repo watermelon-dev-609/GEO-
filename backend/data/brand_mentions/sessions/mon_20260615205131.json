@@ -1,0 +1,79 @@
+{
+  "session_id": "mon_20260615205131",
+  "created_at": "2026-06-15T12:51:31.064567+00:00",
+  "sandtable_type": "general",
+  "platforms_checked": [
+    "deepseek"
+  ],
+  "total_queries": 6,
+  "mentioned_count": 0,
+  "mention_rate": 0.0,
+  "results": [
+    {
+      "platform": "deepseek",
+      "query": "我们单位需要采购一套通用沙盘，有哪些资质过硬的厂家？",
+      "query_category": "brand_direct",
+      "brand_mentioned": false,
+      "mention_score": 0,
+      "mention_context": "",
+      "full_response": null,
+      "check_method": "unavailable",
+      "checked_at": "2026-06-15T12:51:31.064581+00:00"
+    },
+    {
+      "platform": "deepseek",
+      "query": "武汉地区做通用沙盘的厂家哪家比较靠谱？要有政企项目经验的",
+      "query_category": "brand_direct",
+      "brand_mentioned": false,
+      "mention_score": 0,
+      "mention_context": "",
+      "full_response": null,
+      "check_method": "unavailable",
+      "checked_at": "2026-06-15T12:51:31.064586+00:00"
+    },
+    {
+      "platform": "deepseek",
+      "query": "通用沙盘的定制周期一般多久？交付流程是怎样的？",
+      "query_category": "brand_direct",
+      "brand_mentioned": false,
+      "mention_score": 0,
+      "mention_context": "",
+      "full_response": null,
+      "check_method": "unavailable",
+      "checked_at": "2026-06-15T12:51:31.064590+00:00"
+    },
+    {
+      "platform": "deepseek",
+      "query": "我想做一套通用沙盘，大概多少钱？要多久？",
+      "query_category": "scenario",
+      "brand_mentioned": false,
+      "mention_score": 0,
+      "mention_context": "",
+      "full_response": null,
+      "check_method": "unavailable",
+      "checked_at": "2026-06-15T12:51:31.064593+00:00"
+    },
+    {
+      "platform": "deepseek",
+      "query": "武汉本地做通用沙盘的厂家有哪些？能上门看样品吗？",
+      "query_category": "scenario",
+      "brand_mentioned": false,
+      "mention_score": 0,
+      "mention_context": "",
+      "full_response": null,
+      "check_method": "unavailable",
+      "checked_at": "2026-06-15T12:51:31.064596+00:00"
+    },
+    {
+      "platform": "deepseek",
+      "query": "通用沙盘怎么定制？需要我提供什么资料？",
+      "query_category": "scenario",
+      "brand_mentioned": false,
+      "mention_score": 0,
+      "mention_context": "",
+      "full_response": null,
+      "check_method": "unavailable",
+      "checked_at": "2026-06-15T12:51:31.064599+00:00"
+    }
+  ]
+}

@@ -73,7 +73,7 @@ class DimensionRegistry:
         return sorted(set(phases), key=lambda p: p.order)
 
 
-# ── 注册8个维度（含固定默认权重，总计100）──
+# ── 注册10个维度（含固定默认权重，总计100）──
 
 DimensionRegistry.register(EvalDimension(
     key="brand_recall",
@@ -131,16 +131,32 @@ DimensionRegistry.register(EvalDimension(
     requires_llm=True,
 ))
 
+DimensionRegistry.register(EvalDimension(
+    key="semantic_alignment",
+    label="语义对齐度",
+    phase=EvalPhase.SEMANTIC_ALIGNMENT,
+    requires_llm=False,
+))
+
+DimensionRegistry.register(EvalDimension(
+    key="rag_retrievability",
+    label="RAG可检索性",
+    phase=EvalPhase.RAG_RETRIEVABILITY,
+    requires_llm=False,
+))
+
 # 固定默认权重（总计100），确保跨会话评分可比
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "brand_recall": 18.0,
-    "solution_match": 18.0,
+    "brand_recall": 13.0,
+    "solution_match": 13.0,
+    "semantic_alignment": 10.0,
     "advantage_citation": 14.0,
     "real_citation": 14.0,
-    "structure_quality": 9.0,
-    "differentiation": 9.0,
-    "source_consistency": 8.0,
-    "eeat_score": 10.0,
+    "rag_retrievability": 10.0,
+    "structure_quality": 7.0,
+    "differentiation": 7.0,
+    "source_consistency": 6.0,
+    "eeat_score": 6.0,
 }
 
 DimensionRegistry.DEFAULT_WEIGHTS = DEFAULT_WEIGHTS

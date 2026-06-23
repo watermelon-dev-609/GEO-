@@ -54,7 +54,7 @@ def _load_jobs_meta():
 class JobInfo:
     id: str
     name: str
-    type: str           # brand_monitor / weekly_report / monthly_report / platform_check / rss_daily_crawl / citation_weekly_test / structure_weekly_report
+    type: str           # brand_monitor / weekly_report / monthly_report / platform_check / rss_daily_crawl / citation_weekly_test / structure_weekly_report / sentiment_daily_scan
     trigger: str        # cron / interval
     trigger_value: str  # cron表达式 或 间隔分钟数
     enabled: bool = True
@@ -137,6 +137,7 @@ def _add_job_from_meta(job_id: str, meta: dict):
         "monthly_report": _run_monthly_report,
         "rss_daily_crawl": _run_rss_daily_crawl,
         "citation_weekly_test": _run_citation_weekly_test,
+        "sentiment_daily_scan": _run_sentiment_daily_scan,
         "structure_weekly_report": _run_structure_weekly_report,
         "competitor_monitor": _run_competitor_monitor,
     }
@@ -364,6 +365,26 @@ async def _run_competitor_monitor():
         return result
     except Exception as e:
         logger.error(f"[Scheduler] 竞品监控失败: {e}")
+
+
+async def _run_sentiment_daily_scan():
+    """每日情感扫描 — 对最新品牌监测结果进行情感分类，自动创建舆情事件"""
+    logger.info("[Scheduler] 执行每日情感扫描...")
+    try:
+        from app.core.reputation_incident import auto_scan_and_create
+        result = await auto_scan_and_create(
+            sandtable_type="general",
+            platforms=None,
+            auto_create=True,
+        )
+        logger.info(
+            f"[Scheduler] 情感扫描完成: {result['scanned_count']}条, "
+            f"发现{result['issues_found']}个问题, 创建{result['incidents_created']}个事件"
+        )
+        _update_job_run("sentiment_daily_scan")
+        return result
+    except Exception as e:
+        logger.error(f"[Scheduler] 情感扫描失败: {e}")
 
 
 def _update_job_run(job_type: str):

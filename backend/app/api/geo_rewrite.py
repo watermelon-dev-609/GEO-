@@ -9,6 +9,7 @@ from app.models.schemas import (
     RewriteRequest, RewriteResponse, APIResponse,
     OptimizationRuleItem, PlatformOptimizationRules,
     OptimizationRulesResponse, OptimizationRulesUpdateRequest,
+    PublishAdaptRequest,
 )
 from app.models.enums import SandtableType, AIPlatform
 from app.core.rewriter import GEORewriter
@@ -99,6 +100,8 @@ async def rewrite_text(req: RewriteRequest):
             optimization_rules=req.optimization_rules,
             enterprise_name=req.enterprise_name,
             enterprise_location=req.enterprise_location,
+            query_intent=req.query_intent,
+            diversity_seed=req.diversity_seed,
         )
 
         # API层字数硬截断兜底（LLM经常忽略prompt中的字数约束）
@@ -146,6 +149,8 @@ async def rewrite_stream(req: RewriteRequest):
                     optimization_rules=req.optimization_rules,
                     enterprise_name=req.enterprise_name,
                     enterprise_location=req.enterprise_location,
+                    query_intent=req.query_intent,
+                    diversity_seed=req.diversity_seed,
                 ):
                     yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
                 yield "data: [DONE]\n\n"
@@ -206,6 +211,54 @@ async def get_optimization_rules():
         if rules:
             platforms.append(PlatformOptimizationRules(platform=plat_key, rules=rules))
     return OptimizationRulesResponse(platforms=platforms)
+
+
+# ── 发布平台适配 ──
+
+@router.get("/publish-platforms")
+async def list_publish_platforms():
+    """列出所有可用的发布适配平台（公众号/小红书/官网/头条/搜狐/知乎/百家号）"""
+    from app.core.publish_adapter import PublishAdapter
+    return PublishAdapter.list_platforms()
+
+
+@router.post("/publish-adapt", response_model=dict)
+async def adapt_for_publish(req: "PublishAdaptRequest"):
+    """将GEO优化文案适配为各发布平台即用格式
+
+    支持平台: wechat_mp(公众号), xiaohongshu(小红书), official_site(官网),
+             toutiao(头条), sohu(搜狐号), zhihu(知乎), baijiahao(百家号)
+    """
+    from app.core.publish_adapter import PublishAdapter, PUBLISH_PLATFORMS
+
+    invalid = [p for p in req.target_platforms if p not in PUBLISH_PLATFORMS]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"不支持的发布平台: {', '.join(invalid)}")
+
+    try:
+        adapter = PublishAdapter()
+        results = await adapter.adapt(
+            optimized_text=req.optimized_text,
+            target_platforms=req.target_platforms,
+            enterprise_name=req.enterprise_name or "",
+            original_text=req.original_text,
+        )
+
+        items = []
+        for plat_key, data in results.items():
+            items.append({
+                "platform": plat_key,
+                "platform_name": data["platform_name"],
+                "icon": data["icon"],
+                "text": data["text"],
+                "word_count": data["word_count"],
+            })
+
+        return {"results": items}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"发布适配失败: {str(e)}")
 
 
 @router.put("/optimization-rules", response_model=PlatformOptimizationRules)

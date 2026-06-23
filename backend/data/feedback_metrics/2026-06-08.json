@@ -1,0 +1,15 @@
+{
+  "week_start": "2026-06-08",
+  "calculated_at": "2026-06-13T14:09:28.809206",
+  "platforms": {},
+  "summary": {
+    "avg_citation_rate": 0,
+    "avg_rejection_rate": 0,
+    "platforms_with_data": 0,
+    "platforms_dropping": 0,
+    "ai_traffic_visits": 0,
+    "ai_attributed_conversions": 2,
+    "ai_conversion_rate_pct": 66.7,
+    "total_conversions": 3
+  }
+}

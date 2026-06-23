@@ -1,7 +1,7 @@
 """文本清洗API路由"""
 
 import asyncio
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from app.models.schemas import (
     CleaningRequest, CleaningResponse,
     InfoExtractionResponse, APIResponse,
@@ -207,3 +207,45 @@ async def update_cleaning_rules(req: CleaningRulesUpdateRequest):
         return CleaningRulesResponse(rules=req.rules)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存清洗规则配置失败: {str(e)}")
+
+
+# ── 文件导入（支持 Word/PDF/文本）──
+
+@router.post("/import-file")
+async def import_file(file: UploadFile = File(...)):
+    """上传Word(.docx)、PDF或文本文件，自动提取文本内容
+
+    支持格式: .txt, .md, .docx, .pdf
+    最大文件: 10MB
+    """
+    from app.core.file_parser import parse_file_content, SUPPORTED_TYPES
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="未提供文件")
+
+    # 检查文件类型
+    import os
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in SUPPORTED_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件格式: {ext}。支持: {', '.join(SUPPORTED_TYPES.keys())}",
+        )
+
+    try:
+        content = await file.read()
+        result = parse_file_content(file.filename, content)
+
+        return {
+            "success": True,
+            "file_name": file.filename,
+            "file_type": result["file_type"],
+            "text": result["text"],
+            "word_count": result["word_count"],
+            "parse_method": result["parse_method"],
+            "warnings": result["warnings"],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"文件解析失败: {str(e)}")

@@ -52,9 +52,9 @@ class TestEvalDimension:
 class TestDimensionRegistry:
     """Tests for DimensionRegistry."""
 
-    def test_registered_8_dimensions(self):
+    def test_registered_10_dimensions(self):
         dims = DimensionRegistry.list_all()
-        assert len(dims) == 8
+        assert len(dims) == 10  # 8 original + semantic_alignment + rag_retrievability
 
     def test_get_known_dimension(self):
         dim = DimensionRegistry.get("brand_recall")

@@ -67,6 +67,13 @@ class TestSchemaMapping:
         assert "Project" in SCHEMA_MAPPING["real_estate"]
         assert "Place" in SCHEMA_MAPPING["real_estate"]
 
+    def test_general_has_basic_schemas(self):
+        assert "general" in SCHEMA_MAPPING
+        assert "Product" in SCHEMA_MAPPING["general"]
+        assert "Service" in SCHEMA_MAPPING["general"]
+        assert "general" in SCHEMA_DESCRIPTIONS
+        assert len(SCHEMA_DESCRIPTIONS["general"]) > 0
+
 
 class TestGenerateAllTypes:
     @pytest.mark.parametrize("st", list(SandtableType))

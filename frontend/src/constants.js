@@ -10,6 +10,7 @@ export const SANDTABLE_TYPES = [
   { value: 'military_terrain', label: '军事地形沙盘' },
   { value: 'digital_multimedia', label: '数字多媒体沙盘' },
   { value: 'real_estate', label: '地产/规划/展厅沙盘' },
+  { value: 'general', label: '通用沙盘' },
 ]
 
 /** 沙盘类型简写映射（用于Dashboard等短标签场景） */
@@ -22,6 +23,7 @@ export const SANDTABLE_LABELS = {
   military_terrain: '军事地形',
   digital_multimedia: '数字多媒体',
   real_estate: '地产/规划/展厅',
+  general: '通用沙盘',
 }
 
 /** 10大AI平台（完整标签） */
@@ -42,12 +44,18 @@ export const AI_PLATFORMS = [
 export const DIMENSION_LABELS = {
   brand_recall: '品牌召回',
   solution_match: '方案匹配',
+  semantic_alignment: '语义对齐',
   advantage_citation: '优势引用',
   real_citation: '真实采信',
+  rag_retrievability: 'RAG可检索',
   structure_quality: '结构质量',
   differentiation: '差异化程度',
   source_consistency: '信源一致性',
+  eeat_score: 'E-E-A-T',
 }
+
+/** AI原生维度（区别于传统人类视角维度） */
+export const AI_NATIVE_DIMS = new Set(['semantic_alignment', 'rag_retrievability'])
 
 /** 关键词分类 */
 export const KEYWORD_CATEGORIES = [

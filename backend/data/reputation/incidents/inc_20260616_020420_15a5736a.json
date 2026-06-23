@@ -1,0 +1,36 @@
+{
+  "incident_id": "inc_20260616_020420_15a5736a",
+  "platform": "deepseek",
+  "query": "test",
+  "brand_mentioned": false,
+  "sentiment": null,
+  "ai_response_snippet": "test",
+  "severity": "low",
+  "status": "open",
+  "created_at": "2026-06-16T02:04:20.174968+00:00",
+  "resolved_at": null,
+  "correction_content": "纠正内容",
+  "correction_published": true,
+  "timeline": [
+    {
+      "timestamp": "2026-06-16T02:04:20.174968+00:00",
+      "action": "created",
+      "status": "open",
+      "notes": "自动创建 - 严重度: low"
+    },
+    {
+      "timestamp": "2026-06-16T02:04:20.179764+00:00",
+      "action": "correction_generated",
+      "status": "open",
+      "notes": "已生成纠正内容"
+    },
+    {
+      "timestamp": "2026-06-16T02:04:20.183339+00:00",
+      "action": "correction_published",
+      "status": "open",
+      "notes": "纠正内容已发布"
+    }
+  ],
+  "notes": [],
+  "extra": {}
+}

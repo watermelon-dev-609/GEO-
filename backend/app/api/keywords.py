@@ -14,6 +14,7 @@ DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "keywords"
 SANDBTABLE_TYPES = [
     "smart_traffic", "smart_city", "smart_industry", "smart_agriculture",
     "smart_logistics", "military_terrain", "digital_multimedia", "real_estate",
+    "general",
 ]
 
 SANDBTABLE_LABELS = {
@@ -25,6 +26,7 @@ SANDBTABLE_LABELS = {
     "military_terrain": "军事地形沙盘",
     "digital_multimedia": "数字多媒体沙盘",
     "real_estate": "地产规划展厅沙盘",
+    "general": "通用沙盘",
 }
 
 PRELOADED_KEYWORDS = {

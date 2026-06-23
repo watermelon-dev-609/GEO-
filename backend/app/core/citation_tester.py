@@ -54,6 +54,10 @@ TEST_QUERIES = [
     # 补充问题（泛行业）
     {"query": "武汉沙盘模型制作厂家哪家靠谱", "sandtable": "smart_city", "category": "local_service"},
     {"query": "企业展厅沙盘定制多少钱一平米", "sandtable": "digital_multimedia", "category": "commercial"},
+    # 通用沙盘
+    {"query": "沙盘模型灯光控制系统怎么设计", "sandtable": "general", "category": "technical"},
+    {"query": "沙盘制作工艺和材料有哪些选择", "sandtable": "general", "category": "technical"},
+    {"query": "沙盘模型维护保养注意事项", "sandtable": "general", "category": "solution_match"},
 ]
 
 # 测试的AI平台
@@ -435,3 +439,205 @@ def get_citation_test(test_id: str) -> dict | None:
         return None
     with open(test_file, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+# ── 行为漂移检测（P0-3：citation_tester 结果反馈到优化规则） ──
+
+# 漂移阈值配置
+DRIFT_THRESHOLDS = {
+    "structure_feature_delta": 20,   # 结构特征占比变化超过20个百分点触发告警
+    "source_delta": 15,              # 来源分布占比变化超过15个百分点触发告警
+    "timeliness_shift": "major",     # 时效偏好发生大类变化（如"近期偏好"→"无强时效偏好"）触发告警
+    "faq_format_decline": 20,        # FAQ格式占比下降超过20个百分点（DeepSeek的关键特征）
+    "short_sentence_surge": 20,      # 短句占比上升超过20个百分点（豆包的关键特征）
+}
+
+
+def compare_with_previous(
+    latest_result: dict | None = None,
+    previous_result: dict | None = None,
+) -> list[dict]:
+    """对比最近两次AI采信测试结果，检测平台行为漂移。
+
+    当某平台的关键引用行为特征发生显著变化时，生成告警建议更新对应YAML规则。
+
+    Args:
+        latest_result: 最新测试结果（None 时自动加载最新）
+        previous_result: 上一次测试结果（None 时自动加载次新）
+
+    Returns:
+        [{
+            "platform": str,          # 发生漂移的平台
+            "feature": str,           # 变化的特征
+            "old_pct": float,         # 旧占比
+            "new_pct": float,         # 新占比
+            "delta_pct": float,       # 变化幅度
+            "direction": str,         # "rise" | "decline"
+            "severity": str,          # "major" | "moderate" | "minor"
+            "suggestion": str,        # 建议操作（如更新YAML规则）
+            "affected_yaml": str,     # 受影响的YAML模板路径
+        }]
+    """
+    # 自动加载最近两次测试
+    if latest_result is None or previous_result is None:
+        tests = list_citation_tests(days=90)
+        if len(tests) < 2:
+            logger.info("漂移检测跳过：需要至少2次历史测试数据")
+            return []
+
+        if latest_result is None:
+            latest_result = get_citation_test(tests[0]["test_id"])
+        if previous_result is None:
+            previous_result = get_citation_test(tests[1]["test_id"])
+
+    if not latest_result or not previous_result:
+        return []
+
+    latest_stats = latest_result.get("aggregated_stats", {}).get("per_platform", {})
+    previous_stats = previous_result.get("aggregated_stats", {}).get("per_platform", {})
+
+    if not latest_stats or not previous_stats:
+        return []
+
+    alerts = []
+
+    for platform in latest_stats:
+        if platform not in previous_stats:
+            continue
+
+        curr = latest_stats[platform]
+        prev = previous_stats[platform]
+
+        # ── 1. 结构特征漂移检测 ──
+        curr_feat = curr.get("structure_features_pct", {})
+        prev_feat = prev.get("structure_features_pct", {})
+
+        for feat in set(list(curr_feat.keys()) + list(prev_feat.keys())):
+            new_pct = curr_feat.get(feat, 0)
+            old_pct = prev_feat.get(feat, 0)
+            delta = abs(new_pct - old_pct)
+
+            if delta < DRIFT_THRESHOLDS["structure_feature_delta"]:
+                continue
+
+            direction = "rise" if new_pct > old_pct else "decline"
+            severity = _drift_severity(delta)
+
+            # 生成针对性建议
+            suggestion = _build_drift_suggestion(platform, feat, direction, delta)
+            affected_yaml = f"data/platform_templates/{platform}.yaml"
+
+            alerts.append({
+                "platform": platform,
+                "feature": f"结构特征: {feat}",
+                "old_pct": round(old_pct, 1),
+                "new_pct": round(new_pct, 1),
+                "delta_pct": round(delta, 1),
+                "direction": direction,
+                "severity": severity,
+                "suggestion": suggestion,
+                "affected_yaml": affected_yaml,
+            })
+
+        # ── 2. 来源分布漂移检测 ──
+        curr_src = curr.get("cited_sources_pct", {})
+        prev_src = prev.get("cited_sources_pct", {})
+
+        for src in set(list(curr_src.keys()) + list(prev_src.keys())):
+            new_pct = curr_src.get(src, 0)
+            old_pct = prev_src.get(src, 0)
+            delta = abs(new_pct - old_pct)
+
+            if delta < DRIFT_THRESHOLDS["source_delta"]:
+                continue
+
+            direction = "rise" if new_pct > old_pct else "decline"
+            severity = _drift_severity(delta)
+
+            alerts.append({
+                "platform": platform,
+                "feature": f"来源偏好: {src}",
+                "old_pct": round(old_pct, 1),
+                "new_pct": round(new_pct, 1),
+                "delta_pct": round(delta, 1),
+                "direction": direction,
+                "severity": severity,
+                "suggestion": f"平台 {platform} 对 {src} 的引用偏好从 {old_pct}% {'上升' if direction == 'rise' else '下降'}到 {new_pct}%（变化 {delta} 个百分点）。建议检查该来源的内容特征并调整内容分发策略。",
+                "affected_yaml": f"data/platform_templates/{platform}.yaml",
+            })
+
+        # ── 3. 时效偏好大类漂移检测 ──
+        curr_time = curr.get("timeliness_hints_pct", {})
+        prev_time = prev.get("timeliness_hints_pct", {})
+
+        curr_dominant = max(curr_time, key=curr_time.get) if curr_time else None
+        prev_dominant = max(prev_time, key=prev_time.get) if prev_time else None
+
+        if curr_dominant and prev_dominant and curr_dominant != prev_dominant:
+            alerts.append({
+                "platform": platform,
+                "feature": "时效偏好",
+                "old_pct": round(prev_time.get(prev_dominant, 0), 1),
+                "new_pct": round(curr_time.get(curr_dominant, 0), 1),
+                "delta_pct": round(abs(curr_time.get(curr_dominant, 0) - prev_time.get(prev_dominant, 0)), 1),
+                "direction": "shift",
+                "severity": "major",
+                "suggestion": f"平台 {platform} 的时效偏好从「{prev_dominant}」转变为「{curr_dominant}」。建议更新 {platform}.yaml 中的内容时效策略，并重新优化存量内容的时间标记。",
+                "affected_yaml": f"data/platform_templates/{platform}.yaml",
+            })
+
+    # 去重并按严重程度排序
+    alerts.sort(key=lambda a: {"major": 0, "moderate": 1, "minor": 2}.get(a["severity"], 3))
+
+    if alerts:
+        logger.info(f"行为漂移检测完成：发现 {len(alerts)} 个告警")
+    return alerts
+
+
+def _drift_severity(delta_pct: float) -> str:
+    """根据变化幅度判定严重程度"""
+    if delta_pct >= 30:
+        return "major"
+    elif delta_pct >= 20:
+        return "moderate"
+    return "minor"
+
+
+def _build_drift_suggestion(platform: str, feature: str, direction: str, delta: float) -> str:
+    """根据特征和方向生成可操作的建议"""
+
+    FEATURE_RULE_MAP = {
+        "faq_format": "faq_structure（FAQ结构强化）",
+        "list_format": "rag_chunking（RAG切片优化）或 entity_density（品牌实体锚定）",
+        "long_form": "long_form_depth（长文深度展开）",
+        "short_sentence": "short_sentences（短句硬约束）",
+        "data_dense": "param_standardization（参数标准化）或 data_fidelity（数据保留）",
+        "h_tag_structured": "title_format（标题格式）或 three_tier_structure（三层递进结构）",
+        "localized": "first_para_four_elements（首段四要素）或 b_end_orientation（B端导向）",
+        "authoritative": "credential_forward（资质背书前置）",
+        "conclusion_first": "benefit_first（利益前置）或 conclusion_first（结论先行）",
+    }
+
+    rule_hint = FEATURE_RULE_MAP.get(feature, "对应优化规则")
+
+    verb = "上升" if direction == "rise" else "下降"
+    action = "加强" if direction == "decline" else "审视是否需要调整"
+
+    return (
+        f"平台 {platform} 的「{feature}」特征占比{verb}了 {delta} 个百分点。"
+        f"建议 {action} {platform}.yaml 中的 {rule_hint} 规则。"
+        f"如该变化为AI平台长期趋势，可考虑调整对应规则的权重或策略文本。"
+    )
+
+
+def get_latest_drift_report() -> dict:
+    """获取最新的行为漂移报告（便捷API）"""
+    alerts = compare_with_previous()
+    return {
+        "alerts": alerts,
+        "total_alerts": len(alerts),
+        "major_alerts": sum(1 for a in alerts if a["severity"] == "major"),
+        "moderate_alerts": sum(1 for a in alerts if a["severity"] == "moderate"),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "next_check": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+    }

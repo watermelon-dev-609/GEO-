@@ -4,11 +4,21 @@ import { ElMessage } from 'element-plus'
 
 const STORAGE_KEY = 'geo_pipeline_state'
 
+// 使用 localStorage 替代 sessionStorage：
+// GEO优化流程（清洗→改写→评测→导出）是长流程操作，页面刷新或标签页意外关闭
+// 会导致用户花10-20分钟生成的内容全部丢失。localStorage 在标签页关闭后仍持久化。
 function loadFromStorage() {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : {}
-  } catch (e) { console.error('sessionStorage load failed:', e); return {} }
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    // 7天过期的自动清理
+    if (parsed._ts && Date.now() - parsed._ts > 7 * 24 * 60 * 60 * 1000) {
+      localStorage.removeItem(STORAGE_KEY)
+      return {}
+    }
+    return parsed
+  } catch (e) { console.error('localStorage load failed:', e); return {} }
 }
 
 export const useGeoStore = defineStore('geo', () => {
@@ -73,6 +83,58 @@ export const useGeoStore = defineStore('geo', () => {
     }
     return null
   })
+
+  // ── 鉴权状态 ──
+  const authToken = ref(localStorage.getItem('geo_auth_token') || null)
+  const authChecked = ref(false)        // 是否已向服务端验证过会话
+  const authEnabled = ref(false)        // 服务端是否启用了鉴权
+  const lastActivity = ref(Date.now())  // 最后活动时间（用于超时检测）
+  const SESSION_TIMEOUT = 30 * 60 * 1000  // 30分钟无操作自动退出
+
+  const isAuthenticated = computed(() => {
+    if (!authEnabled.value) return true   // 服务端未启用鉴权，放行
+    if (!authToken.value) return false    // 无 token
+    // 检查超时
+    if (Date.now() - lastActivity.value > SESSION_TIMEOUT) {
+      logout()
+      return false
+    }
+    return true
+  })
+
+  function recordActivity() {
+    lastActivity.value = Date.now()
+  }
+
+  function setAuthToken(token) {
+    authToken.value = token
+    if (token) {
+      localStorage.setItem('geo_auth_token', token)
+    } else {
+      localStorage.removeItem('geo_auth_token')
+    }
+    lastActivity.value = Date.now()
+  }
+
+  function setAuthEnabled(enabled) {
+    authEnabled.value = enabled
+  }
+
+  function setAuthChecked() {
+    authChecked.value = true
+  }
+
+  function logout() {
+    setAuthToken(null)
+    authChecked.value = false
+    ElMessage.info('会话已过期，请重新登录')
+  }
+
+  // 监听用户活动
+  if (typeof window !== 'undefined') {
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart']
+    events.forEach(e => window.addEventListener(e, recordActivity, { passive: true }))
+  }
 
   // ── 重优化上下文 ──
   const reoptimizeContext = ref(null)
@@ -271,14 +333,15 @@ export const useGeoStore = defineStore('geo', () => {
     selectedPlatforms.value = []
   }
 
-  // ── 自动保存到 sessionStorage（防抖 + 容量保护）──
-  const SESSION_STORAGE_MAX = 4 * 1024 * 1024  // 4MB 安全上限
+  // ── 自动保存到 localStorage（防抖 + 容量保护 + 7天过期）──
+  const LOCAL_STORAGE_MAX = 4 * 1024 * 1024  // 4MB 安全上限
   let _saveTimer = null
   function _scheduleSave() {
     clearTimeout(_saveTimer)
     _saveTimer = setTimeout(() => {
       try {
         const payload = {
+          _ts: Date.now(),  // 时间戳，用于7天过期自动清理
           currentStep: currentStep.value,
           originalText: originalText.value,
           cleanedText: cleanedText.value,
@@ -290,7 +353,7 @@ export const useGeoStore = defineStore('geo', () => {
           projectHistory: projectHistory.value.slice(0, 20),
         }
         const serialized = JSON.stringify(payload)
-        if (serialized.length > SESSION_STORAGE_MAX) {
+        if (serialized.length > LOCAL_STORAGE_MAX) {
           payload.rewriteResults = (payload.rewriteResults || []).map(r => ({
             platform: r.platform,
             optimized_text: (r.optimized_text || '').slice(0, 1000),
@@ -299,10 +362,10 @@ export const useGeoStore = defineStore('geo', () => {
           payload.evaluationResult = null
           payload.projectHistory = (payload.projectHistory || []).slice(0, 5)
         }
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
       } catch (e) {
-        console.error('sessionStorage save failed:', e)
-        try { sessionStorage.removeItem(STORAGE_KEY) } catch { /* full clear */ }
+        console.error('localStorage save failed:', e)
+        try { localStorage.removeItem(STORAGE_KEY) } catch { /* full clear */ }
       }
     }, 300)
   }
@@ -322,6 +385,9 @@ export const useGeoStore = defineStore('geo', () => {
     evalHistory, evalHistoryLoading, fetchEvalHistory, pushToHistory, deleteEvalHistoryItem,
     recentEvaluations, averageEvalScore, scoreTrend,
     reoptimizeContext, setReoptimizeContext, clearReoptimizeContext,
+    // Auth
+    authToken, authChecked, authEnabled, isAuthenticated,
+    setAuthToken, setAuthEnabled, setAuthChecked, logout, recordActivity,
     // Traffic, conversion, UTM
     trafficConfig, trafficSummary, trafficTrend, trafficLoading,
     conversionSummary, conversionTrend, funnelData, conversionsByPlatform, conversionLoading,

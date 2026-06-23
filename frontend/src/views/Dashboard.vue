@@ -5,6 +5,42 @@
       <p>{{ store.enterpriseName || 'GEO生成式搜索优化平台' }} · 全平台AI品牌优先曝光 · 纯白帽合规优化</p>
     </div>
 
+    <!-- 首次使用引导 -->
+    <el-card v-if="showOnboarding" shadow="never" class="onboarding-card">
+      <template #header>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:20px;">🚀</span>
+          <span style="font-weight:600;">快速开始 — 4步完成GEO优化</span>
+          <el-tag size="small" type="success" effect="plain" style="margin-left:8px;">新手指南</el-tag>
+        </div>
+      </template>
+      <el-steps :active="onboardingActive" finish-status="success" align-center>
+        <el-step title="导入文案" description="粘贴或上传企业介绍、产品文案、案例描述">
+          <template #default>
+            <el-button size="small" type="primary" @click="$router.push('/import')">去导入</el-button>
+          </template>
+        </el-step>
+        <el-step title="GEO优化" description="选择沙盘类型和AI平台，一键生成AI友好内容">
+          <template #default>
+            <el-button size="small" type="primary" @click="$router.push('/workshop')">去优化</el-button>
+          </template>
+        </el-step>
+        <el-step title="AI评测" description="8维评测体系评估内容质量，定位短板">
+          <template #default>
+            <el-button size="small" type="primary" @click="$router.push('/evaluation')">去评测</el-button>
+          </template>
+        </el-step>
+        <el-step title="发布导出" description="适配各平台格式，一键复制发布或导出报告">
+          <template #default>
+            <el-button size="small" type="success" @click="$router.push('/export')">去导出</el-button>
+          </template>
+        </el-step>
+      </el-steps>
+      <div style="text-align:center;margin-top:16px;">
+        <el-button size="small" text @click="dismissOnboarding">不再显示</el-button>
+      </div>
+    </el-card>
+
     <el-row :gutter="20" class="quick-actions">
       <el-col :span="6" v-for="action in quickActions" :key="action.path">
         <el-card shadow="hover" class="action-card" @click="$router.push(action.path)">
@@ -206,10 +242,12 @@
       </el-col>
     </el-row>
 
-    <el-card shadow="never" style="margin-top: 24px;" v-if="recentProjects.length > 0">
+    <el-card shadow="never" style="margin-top: 24px;" v-if="store.projectHistory.length > 0">
       <template #header>
-        <span>最近项目</span>
-        <span style="font-size:12px;color:#9B9EAA;margin-left:8px;">点击行可跳转继续工作</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span>最近项目 ({{ store.projectHistory.length }})</span>
+          <el-input v-model="projectSearch" size="small" placeholder="搜索项目..." clearable style="width:200px;" />
+        </div>
       </template>
       <el-table :data="recentProjects" style="width: 100%" size="small" @row-click="onProjectClick" :row-style="{ cursor: 'pointer' }">
         <el-table-column prop="name" label="项目名称" />
@@ -217,6 +255,31 @@
         <el-table-column prop="status" label="状态" width="100" />
         <el-table-column prop="time" label="时间" width="180" />
       </el-table>
+    </el-card>
+
+    <!-- 备份管理 -->
+    <el-card shadow="never" style="margin-top: 24px;" v-if="backups.length > 0 || backupLoading">
+      <template #header>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span>💾 数据备份</span>
+          <el-button size="small" type="primary" @click="manualBackup" :loading="backupCreating">立即备份</el-button>
+        </div>
+      </template>
+      <div v-loading="backupLoading">
+        <div v-if="backups.length === 0" style="text-align:center;padding:20px;color:#9B9EAA;">
+          暂无备份，点击上方按钮创建首次备份
+        </div>
+        <el-table v-else :data="backups" size="small">
+          <el-table-column prop="name" label="备份文件" min-width="200" />
+          <el-table-column prop="size_kb" label="大小" width="100">
+            <template #default="scope">{{ scope.row.size_kb }}KB</template>
+          </el-table-column>
+          <el-table-column prop="created_at" label="创建时间" width="180" />
+          <el-table-column prop="age_days" label="保留" width="80">
+            <template #default="scope">{{ scope.row.age_days }}天前</template>
+          </el-table-column>
+        </el-table>
+      </div>
     </el-card>
   </div>
 </template>
@@ -226,6 +289,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeoStore } from '../stores/geo'
 import { getLLMConfig, getEvalHistory, getAnalyticsOverview } from '../api'
+import api from '../api'
 import { ElMessage } from 'element-plus'
 import { SANDTABLE_LABELS, AI_PLATFORMS, scoreColor } from '../constants'
 
@@ -238,6 +302,31 @@ const analytics = ref(null)
 const analyticsLoading = ref(false)
 const analyticsError = ref(false)
 
+// ── 备份管理 ──
+const backups = ref([])
+const backupLoading = ref(false)
+const backupCreating = ref(false)
+
+async function loadBackups() {
+  backupLoading.value = true
+  try {
+    const res = await api.get('/backup/list')
+    backups.value = res.data || []
+  } catch { /* 备份API可能未启用 */ }
+  finally { backupLoading.value = false }
+}
+
+async function manualBackup() {
+  backupCreating.value = true
+  try {
+    const res = await api.post('/backup/create')
+    ElMessage.success(`备份完成：${res.data.size_kb}KB, ${res.data.files_count}个文件`)
+    loadBackups()
+  } catch (e) {
+    ElMessage.error('备份失败: ' + (e.response?.data?.detail || e.message))
+  } finally { backupCreating.value = false }
+}
+
 const quickActions = [
   { path: '/import', title: '文案导入', desc: '导入、清洗标准化文案', icon: 'DocumentAdd', color: '#C8963E' },
   { path: '/workshop', title: 'GEO优化工坊', desc: '八大沙盘×七大平台专项优化', icon: 'EditPen', color: '#5B8C5A' },
@@ -247,7 +336,39 @@ const quickActions = [
 ]
 
 const llmConfigs = computed(() => store.llmConfigs)
-const recentProjects = computed(() => store.projectHistory.slice(0, 5))
+const projectSearch = ref('')
+const recentProjects = computed(() => {
+  let items = store.projectHistory || []
+  if (projectSearch.value) {
+    const q = projectSearch.value.toLowerCase()
+    items = items.filter(p =>
+      (p.name || '').toLowerCase().includes(q) ||
+      (p.sandtableType || '').toLowerCase().includes(q) ||
+      (p.status || '').toLowerCase().includes(q)
+    )
+  }
+  return items.slice(0, 20)
+})
+const onboardingDismissed = ref(localStorage.getItem('geo_onboarding_dismissed') === '1')
+const showOnboarding = computed(() => {
+  if (onboardingDismissed.value) return false
+  // 累计评测 > 0 即视为老用户，自动隐藏引导
+  const overview = analytics.value?.overview
+  if (overview && (overview.scored_evaluations || 0) > 0) return false
+  return true
+})
+const onboardingActive = computed(() => {
+  if (store.hasEvaluation) return 4
+  if (store.hasResults) return 3
+  if (store.hasCleanedText) return 2
+  if (store.originalText) return 1
+  return 0
+})
+function dismissOnboarding() {
+  onboardingDismissed.value = true
+  localStorage.setItem('geo_onboarding_dismissed', '1')
+}
+
 const activeGuideStep = computed(() => {
   if (store.hasEvaluation) return 5
   if (store.hasResults) return 4
@@ -347,6 +468,7 @@ onMounted(async () => {
   } catch (e) { ElMessage.warning('LLM配置加载失败，请检查后端服务: ' + (e.response?.data?.detail || e.message)) }
   loadEvalHistory()
   loadAnalytics()
+  loadBackups()
 })
 </script>
 

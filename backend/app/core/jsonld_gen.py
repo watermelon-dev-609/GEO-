@@ -16,6 +16,7 @@ SCHEMA_MAPPING = {
     "military_terrain": ["Product", "EducationalProduct", "Organization"],
     "digital_multimedia": ["Product", "SoftwareApplication", "CreativeWork"],
     "real_estate": ["Service", "RealEstateService", "Project", "Place"],
+    "general": ["Product", "Service", "Organization"],
 }
 
 # 沙盘类型到Schema描述的映射
@@ -28,6 +29,7 @@ SCHEMA_DESCRIPTIONS = {
     "military_terrain": "军事地形沙盘 — 地形精准还原、战术仿真，适配军事教学与作战推演",
     "digital_multimedia": "数字多媒体沙盘 — 触控交互、声光电特效，适配数字化展厅与沉浸式体验",
     "real_estate": "地产/规划/展厅沙盘 — 空间还原、项目展示，适配地产营销与城市规划汇报",
+    "general": "沙盘模型 — 专业定制、精细呈现，涵盖交通/城市/工业/农业/军事/多媒体/地产等全领域沙盘制作",
 }
 
 

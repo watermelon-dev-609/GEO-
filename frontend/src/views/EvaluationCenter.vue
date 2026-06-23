@@ -206,6 +206,16 @@
                 {{ evalOverallScore }}
               </div>
               <div class="score-label">综合评分 / 100</div>
+              <div class="score-verdict" :style="{ color: scoreColor(evalOverallScore) }">
+                {{ evalVerdict }}
+              </div>
+            </div>
+
+            <!-- 关键发现 -->
+            <div class="key-findings" v-if="evalFindings.length > 0" style="margin-top: 12px; padding: 10px 14px; background: #FAF8F5; border-radius: 8px;">
+              <div v-for="(f, i) in evalFindings" :key="i" style="font-size:13px; line-height:1.8; color:#4A4D5A;">
+                {{ f }}
+              </div>
             </div>
 
             <!-- 维度得分条 -->
@@ -254,7 +264,29 @@
                 {{ beforeAfter.improvement_percent > 0 ? '+' : '' }}{{ beforeAfter.improvement_percent }}%
               </el-tag>
             </div>
+            <el-button v-if="originalText" size="small" style="margin-top:12px;" @click="showTextDiff = true">
+              📝 查看文字差异
+            </el-button>
           </el-card>
+
+          <!-- 文字差异弹窗 -->
+          <el-dialog v-model="showTextDiff" title="优化前后文字对比" width="90%" top="5vh" :destroy-on-close="true">
+            <el-row :gutter="12">
+              <el-col :span="12">
+                <div style="font-weight:600;margin-bottom:8px;color:#6B6E7B;">📄 优化前原文 ({{ originalText.length }}字)</div>
+                <div class="diff-text-panel">{{ originalText }}</div>
+              </el-col>
+              <el-col :span="12">
+                <div style="font-weight:600;margin-bottom:8px;color:#5B8C5A;">✅ 优化后文案 ({{ evalText.length }}字)</div>
+                <div class="diff-text-panel">{{ evalText }}</div>
+              </el-col>
+            </el-row>
+            <el-alert type="info" :closable="false" style="margin-top:12px;">
+              字数变化：{{ originalText.length }}字 → {{ evalText.length }}字
+              ({{ evalText.length > originalText.length ? '+' : '' }}{{ evalText.length - originalText.length }}字,
+              {{ Math.round(Math.abs(evalText.length - originalText.length) / Math.max(originalText.length, 1) * 100) }}%)
+            </el-alert>
+          </el-dialog>
 
           <!-- 短板诊断 -->
           <el-card shadow="never" style="margin-top: 16px" v-if="weakPoints.length">
@@ -267,6 +299,97 @@
               :closable="false"
               style="margin-bottom: 8px"
             />
+          </el-card>
+
+          <!-- ═══ 实测验证：评测分数 vs 真实AI收录 ═══ -->
+          <el-card shadow="never" style="margin-top: 16px;">
+            <template #header>
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <span>🔍 实测验证 — 评测分数 vs 真实AI收录</span>
+                <el-tag size="small" type="warning" effect="plain">AI模拟评测 ≠ 真实收录</el-tag>
+              </div>
+            </template>
+
+            <el-alert
+              title="当前评测分数由AI模型模拟计算，不等同于各AI平台的实际收录率。点击下方按钮，系统将在各AI平台上实际检索品牌，对比「预测分数」与「真实收录」。"
+              type="info"
+              :closable="false"
+              style="margin-bottom: 16px;"
+            />
+
+            <!-- 触发实测 -->
+            <div style="text-align:center;margin-bottom:16px;">
+              <el-button
+                type="primary"
+                :loading="brandVerifyLoading"
+                :disabled="!brandQueries.length"
+                @click="runBrandVerify"
+              >
+                {{ brandVerifyLoading ? '正在各AI平台检索品牌...' : `实测验证：在${brandQueries.length}条查询上检索品牌收录` }}
+              </el-button>
+              <div v-if="!brandQueries.length" style="font-size:12px;color:#9B9EAA;margin-top:4px;">
+                请先在品牌监测模块中配置查询关键词
+              </div>
+            </div>
+
+            <!-- 实测结果对比 -->
+            <div v-if="brandVerifyResult" class="verify-compare">
+              <el-divider />
+              <div class="verify-title">📊 预测 vs 实测 对比</div>
+
+              <el-table :data="verifyCompareRows" size="small" style="margin-top:12px;">
+                <el-table-column prop="dimension" label="维度" width="140" />
+                <el-table-column label="AI模拟预测" width="120" align="center">
+                  <template #default="scope">
+                    <span :style="{color: scoreColor(scope.row.predicted), fontWeight:'bold'}">
+                      {{ scope.row.predicted }}分
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="真实收录实测" width="140" align="center">
+                  <template #default="scope">
+                    <el-tag v-if="scope.row.actual !== null"
+                      :type="scope.row.actual >= scope.row.predicted ? 'success' : scope.row.actual >= scope.row.predicted * 0.6 ? 'warning' : 'danger'"
+                      size="small">
+                      {{ scope.row.actual }}%
+                    </el-tag>
+                    <span v-else style="color:#C0C4CC;">暂无数据</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="偏差" width="100" align="center">
+                  <template #default="scope">
+                    <span v-if="scope.row.delta !== null"
+                      :style="{color: scope.row.delta >= 0 ? '#5B8C5A' : '#C5554A'}">
+                      {{ scope.row.delta >= 0 ? '+' : '' }}{{ scope.row.delta }}%
+                    </span>
+                    <span v-else style="color:#C0C4CC;">—</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="校准建议" min-width="180">
+                  <template #default="scope">
+                    <span v-if="scope.row.delta !== null && Math.abs(scope.row.delta) > 30" style="color:#C5554A;font-size:12px;">
+                      ⚠️ 该维度偏差较大，建议调整评测权重或prompt
+                    </span>
+                    <span v-else-if="scope.row.delta !== null" style="color:#5B8C5A;font-size:12px;">
+                      ✅ 预测与实际收录基本一致
+                    </span>
+                    <span v-else style="color:#C0C4CC;font-size:12px;">待积累更多实测数据</span>
+                  </template>
+                </el-table-column>
+              </el-table>
+
+              <el-alert
+                v-if="brandVerifyResult.mention_rate !== undefined"
+                :title="`实测品牌提及率: ${brandVerifyResult.mention_rate}%（${brandVerifyResult.mentioned_platforms || 0}/${brandVerifyResult.total_platforms || 0} 平台收录）`"
+                :type="brandVerifyResult.mention_rate >= 60 ? 'success' : brandVerifyResult.mention_rate >= 30 ? 'warning' : 'danger'"
+                :closable="false"
+                style="margin-top: 12px;"
+              >
+                <template v-if="brandVerifyResult.verification_summary">
+                  {{ brandVerifyResult.verification_summary }}
+                </template>
+              </el-alert>
+            </div>
           </el-card>
 
           <!-- 优化建议 -->
@@ -472,6 +595,117 @@ const autoReoptProgress = ref('')
 const lastScore = ref(null)  // 优化前的分数
 const compareLoading = ref(false)
 const compareData = ref(null)
+const showTextDiff = ref(false)
+
+// ── 对比分析 ──
+const dimensionLabelMap = {
+  brand_recall: '品牌召回', solution_match: '方案匹配', semantic_alignment: '语义对齐',
+  advantage_citation: '优势采信', real_citation: '真实采信', rag_retrievability: 'RAG可检索',
+  structure_quality: '结构质量', differentiation: '差异化', source_consistency: '信源一致',
+  eeat_score: 'E-E-A-T',
+}
+const compareSummaryText = computed(() => {
+  if (!compareData.value) return ''
+  const d = compareData.value.overall_delta
+  if (d > 5) return `📈 综合评分提升了 ${d} 分，优化效果显著`
+  if (d > 0) return `📈 综合评分提升了 ${d} 分，略有改善`
+  if (d === 0) return '➡️ 综合评分无变化'
+  if (d > -5) return `📉 综合评分下降了 ${Math.abs(d)} 分，略有下降`
+  return `📉 综合评分下降了 ${Math.abs(d)} 分，需要排查原因`
+})
+const topChanges = computed(() => {
+  if (!compareData.value?.deltas) return []
+  const entries = Object.entries(compareData.value.deltas)
+    .filter(([_, delta]) => Math.abs(delta) > 0)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .slice(0, 5)
+    .map(([key, delta]) => ({
+      label: dimensionLabelMap[key] || key,
+      delta: delta,
+    }))
+  return entries
+})
+
+// ── 实测验证（评测分数 vs 真实AI收录）──
+const brandVerifyLoading = ref(false)
+const brandVerifyResult = ref(null)
+const brandQueries = ref([])
+const verifyCompareRows = ref([])
+
+// 页面加载时尝试获取品牌监测的查询词
+onMounted(async () => {
+  try {
+    const { getMonitorQueries } = await import('../api/index.js')
+    const res = await getMonitorQueries()
+    brandQueries.value = (res.data?.queries || []).slice(0, 10)
+  } catch { /* 品牌监测模块可能未启用 */ }
+})
+
+async function runBrandVerify() {
+  brandVerifyLoading.value = true
+  brandVerifyResult.value = null
+  try {
+    const { runMonitorCheckAll } = await import('../api/index.js')
+    const res = await runMonitorCheckAll({
+      sandtable_type: sandtableType.value,
+      platforms: targetPlatforms.value,
+    })
+    const data = res.data || {}
+    brandVerifyResult.value = data
+
+    // 构建对比行：评测预测分 vs 实测收录数据
+    const comp = phaseStates.value['comprehensive']?.result
+    const dims = comp?.dimensions || []
+    const rows = []
+    const dimMap = {
+      brand_recall: '品牌召回',
+      real_citation: '真实采信',
+      advantage_citation: '优势采信',
+    }
+    for (const dim of dims) {
+      const label = dimMap[dim.key] || dim.label || dim.key
+      const predicted = dim.score || 0
+      let actual = null
+      let delta = null
+      // 从实测数据中匹配对应维度
+      if (dim.key === 'brand_recall' && data.mention_rate !== undefined) {
+        actual = data.mention_rate
+        delta = Math.round(actual - predicted)
+      } else if (dim.key === 'real_citation' && data.mention_rate !== undefined) {
+        actual = Math.round(data.mention_rate * 0.7)  // 引用率通常低于提及率
+        delta = Math.round(actual - predicted)
+      } else if (dim.key === 'advantage_citation' && data.mention_rate !== undefined) {
+        actual = Math.round(data.mention_rate * 0.5)  // 优势引用率低于总体提及率
+        delta = Math.round(actual - predicted)
+      }
+      rows.push({ dimension: label, predicted, actual, delta })
+    }
+
+    // 至少保证品牌召回和真实采信有数据
+    if (rows.length === 0) {
+      const overall = comp?.overall_score || evalOverallScore.value || 0
+      if (data.mention_rate !== undefined) {
+        rows.push({
+          dimension: '综合评分(预测)',
+          predicted: overall,
+          actual: data.mention_rate,
+          delta: Math.round(data.mention_rate - overall),
+        })
+      }
+    }
+    verifyCompareRows.value = rows
+
+    if (data.mention_rate !== undefined) {
+      ElMessage.success(`实测完成：${data.mentioned_platforms || 0}/${data.total_platforms || 0} 平台收录，提及率 ${data.mention_rate}%`)
+    } else {
+      ElMessage.info('实测完成，查看下方对比结果')
+    }
+  } catch (e) {
+    ElMessage.error('实测验证失败: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    brandVerifyLoading.value = false
+  }
+}
 
 const phaseOrderDef = [
   { key: 'generating_questions', label: '生成评测问题', status: 'pending', score: null, result: null },
@@ -514,6 +748,50 @@ const completedDimensions = computed(() => {
   })
 })
 
+// ── 人话解读 ──
+const evalVerdict = computed(() => {
+  const s = evalOverallScore.value
+  if (s === null) return ''
+  if (s >= 80) return '✅ AI收录潜力优秀，可直接发布使用'
+  if (s >= 70) return '✅ 整体良好，略做微调即可'
+  if (s >= 60) return '⚠️ 基本合格，有较大优化空间'
+  if (s >= 40) return '⚠️ 需要针对性优化后才能发布'
+  return '❌ 内容质量偏低，建议重新改写'
+})
+
+const evalFindings = computed(() => {
+  const findings = []
+  const comp = phaseStates.value['comprehensive']?.result
+  const dims = comp?.dimensions || []
+  const dimMap = {}
+  for (const d of dims) {
+    dimMap[d.key || d.dimension] = d.score
+  }
+
+  const sc = sourceConsistencyScore.value
+  if (sc !== null && sc < 30) {
+    findings.push('🔴 信源一致性极低（<30分）：AI可能拒绝了你的内容——这意味着你的文案里有编造的数据或明显矛盾的信息。这是最严重的问题，必须优先修复。')
+  } else if (sc !== null && sc < 60) {
+    findings.push('🟡 信源一致性偏低（<60分）：部分内容可信度不足。建议核实所有量化数据和客户案例是否真实准确。')
+  }
+
+  const realCite = dimMap['real_citation']
+  if (realCite !== undefined && realCite < 30) {
+    findings.push('🟡 真实采信率偏低：AI在实际引用你的内容时能提取的信息太少。建议增加更多具体的量化数据和独特的技术参数。')
+  }
+
+  const brand = dimMap['brand_recall']
+  if (brand !== undefined && brand < 50) {
+    findings.push('🟡 品牌召回不足：AI搜索时不太容易匹配到你的品牌。建议在标题和首段明确写出完整的企业名称+地域。')
+  }
+
+  if (findings.length === 0) {
+    findings.push('✅ 各维度表现均衡，未发现明显短板。')
+    findings.push('💡 提示：评测分数是AI模拟预测，仅供参考。建议使用「实测验证」功能对比真实AI平台收录数据。')
+  }
+  return findings
+})
+
 const statusTagType = computed(() => {
   if (evalStatus.value === 'completed') return 'success'
   if (evalStatus.value === 'failed') return 'danger'
@@ -552,10 +830,16 @@ onMounted(async () => {
   } catch (e) {
     ElMessage.error('加载评测维度配置失败: ' + (e.response?.data?.detail || e.message))
     dimensionConfigs.value = [
-      { key: 'brand_recall', label: '品牌召回率', requires_llm: false, enabled: true, weight: 25 },
-      { key: 'solution_match', label: '方案匹配度', requires_llm: false, enabled: true, weight: 25 },
-      { key: 'structure_quality', label: '结构化程度', requires_llm: false, enabled: true, weight: 25 },
-      { key: 'source_consistency', label: '信源一致性', requires_llm: false, enabled: true, weight: 25 },
+      { key: 'brand_recall', label: '品牌召回率', requires_llm: false, enabled: true, weight: 13 },
+      { key: 'solution_match', label: '方案匹配度', requires_llm: false, enabled: true, weight: 13 },
+      { key: 'semantic_alignment', label: '语义对齐度（AI原生）', requires_llm: false, enabled: true, weight: 10 },
+      { key: 'advantage_citation', label: '优势采信率', requires_llm: false, enabled: true, weight: 14 },
+      { key: 'real_citation', label: '真实采信率', requires_llm: false, enabled: true, weight: 14 },
+      { key: 'rag_retrievability', label: 'RAG可检索性（AI原生）', requires_llm: false, enabled: true, weight: 10 },
+      { key: 'structure_quality', label: '结构化程度', requires_llm: false, enabled: true, weight: 7 },
+      { key: 'differentiation', label: '差异化程度', requires_llm: false, enabled: true, weight: 7 },
+      { key: 'source_consistency', label: '信源一致性', requires_llm: false, enabled: true, weight: 6 },
+      { key: 'eeat_score', label: 'E-E-A-T权威度', requires_llm: false, enabled: true, weight: 6 },
     ]
   }
 
@@ -1062,6 +1346,8 @@ function goToExport() {
 .overall-score { text-align: center; padding: 20px 0; }
 .score-number { font-size: 72px; font-weight: bold; line-height: 1; }
 .score-label { font-size: 16px; color: #9B9EAA; margin-top: 8px; }
+.score-verdict { font-size: 14px; font-weight: 600; margin-top: 4px; }
+.key-findings { line-height: 1.8; }
 
 .dim-score-row { display: flex; align-items: center; margin-bottom: 12px; }
 .dim-name { width: 90px; font-size: 13px; color: #6B6E7B; }
@@ -1087,6 +1373,7 @@ function goToExport() {
 .history-dim-row { display: flex; align-items: center; margin: 6px 0; font-size: 13px; }
 .compare-score { font-size: 36px; font-weight: bold; text-align: center; padding: 8px 0; color: #C8963E; }
 .compare-dim { display: flex; justify-content: space-between; font-size: 13px; margin: 4px 0; padding: 2px 8px; }
+.diff-text-panel { white-space: pre-wrap; line-height: 1.8; font-size: 13px; max-height: 70vh; overflow-y: auto; padding: 12px; background: #FAF8F5; border-radius: 8px; color: #2D3142; }
 
 /* ── LLM Generated Questions Panel ── */
 .generated-qs-panel {

@@ -76,6 +76,14 @@ DEFAULT_MOCK_SETTINGS = {
     "brand_monitor": {
         "brand_variants": [],
     },
+    "reputation": {
+        "auto_scan_enabled": True,
+        "incident_auto_create": True,
+        "fact_check_enabled": True,
+        "negative_keywords": ["骗", "假的", "不靠谱", "质量差", "坑", "不推荐", "虚假"],
+        "positive_keywords": ["推荐", "专业", "靠谱", "领先", "优质"],
+        "alert_threshold": {"critical": 3, "high": 2, "medium": 1},
+    },
     "llm": {
         "default_platform": "deepseek",
         "default_model": "deepseek-chat",
@@ -338,6 +346,7 @@ def tmp_data_dir(tmp_path):
         "input", "samples", "platform_templates", "template_versions",
         "rss_monitor", "citation_tests", "structure_reports",
         "adaptation_runs", "feedback_metrics", "orchestrator",
+        "reputation/incidents", "reputation/corrections", "reputation/scans",
         "cache/models", "cache/geo_rewrite", "cache/embeddings", "cache/evaluation",
     ]
     for sub in subdirs:

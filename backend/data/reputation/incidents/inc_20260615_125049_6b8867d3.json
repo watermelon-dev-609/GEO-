@@ -1,0 +1,45 @@
+{
+  "incident_id": "inc_20260615_125049_6b8867d3",
+  "platform": "deepseek",
+  "query": "test",
+  "brand_mentioned": false,
+  "sentiment": null,
+  "ai_response_snippet": "test",
+  "severity": "low",
+  "status": "open",
+  "created_at": "2026-06-15T12:50:49.375462+00:00",
+  "resolved_at": "2026-06-15T12:50:49.378359+00:00",
+  "correction_content": null,
+  "correction_published": false,
+  "timeline": [
+    {
+      "timestamp": "2026-06-15T12:50:49.375462+00:00",
+      "action": "created",
+      "status": "open",
+      "notes": "自动创建 - 严重度: low"
+    },
+    {
+      "timestamp": "2026-06-15T12:50:49.378359+00:00",
+      "action": "dismissed",
+      "status": "dismissed",
+      "notes": "不重要"
+    },
+    {
+      "timestamp": "2026-06-15T12:50:49.382952+00:00",
+      "action": "reopened",
+      "status": "open",
+      "notes": "重新评估"
+    }
+  ],
+  "notes": [
+    {
+      "timestamp": "2026-06-15T12:50:49.378359+00:00",
+      "content": "不重要"
+    },
+    {
+      "timestamp": "2026-06-15T12:50:49.382952+00:00",
+      "content": "重新评估"
+    }
+  ],
+  "extra": {}
+}

@@ -135,6 +135,10 @@ app.include_router(traffic.router, prefix="/api/traffic", tags=["流量分析"])
 app.include_router(utm.router, prefix="/api/utm", tags=["UTM追踪"])
 app.include_router(conv_api.router, prefix="/api/conversions", tags=["转化归因"])
 
+# ── Phase 6: 品牌舆情管理 ──
+from app.api import reputation
+app.include_router(reputation.router, prefix="/api/reputation", tags=["品牌舆情管理"])
+
 # 确保数据目录存在
 get_data_dir()
 (BACKEND_DIR / "data" / "output").mkdir(parents=True, exist_ok=True)
@@ -157,6 +161,9 @@ get_data_dir()
 (BACKEND_DIR / "data" / "traffic").mkdir(parents=True, exist_ok=True)
 (BACKEND_DIR / "data" / "conversions").mkdir(parents=True, exist_ok=True)
 (BACKEND_DIR / "data" / "utm_campaigns").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "reputation" / "incidents").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "reputation" / "corrections").mkdir(parents=True, exist_ok=True)
+(BACKEND_DIR / "data" / "reputation" / "scans").mkdir(parents=True, exist_ok=True)
 
 
 # ── 启动事件 ──
@@ -237,6 +244,19 @@ async def startup_watchdog():
         wd_logger.warning(f"Watchdog 启动失败: {e}，回退到 TTL 轮询模式")
 
 
+@app.on_event("startup")
+async def startup_backup():
+    """启动时注册每日数据自动备份"""
+    import logging
+    bk_logger = logging.getLogger(__name__)
+    try:
+        from app.core.data_backup import register_backup_job
+        register_backup_job()
+        bk_logger.info("每日数据备份任务已注册（凌晨2:00自动执行，保留最近7天）")
+    except Exception as e:
+        bk_logger.warning(f"数据备份任务注册失败: {e}")
+
+
 @app.on_event("shutdown")
 async def shutdown_watchdog():
     """停止文件系统监控"""
@@ -247,15 +267,69 @@ async def shutdown_watchdog():
         pass
 
 
+# ── 数据备份管理API ──
+
+@app.get("/api/backup/list")
+async def list_backups():
+    """列出所有数据备份"""
+    from app.core.data_backup import list_backups
+    return list_backups()
+
+
+@app.post("/api/backup/create")
+async def manual_backup():
+    """手动触发一次数据备份"""
+    from app.core.data_backup import create_backup
+    try:
+        result = create_backup()
+        return {"success": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"备份失败: {str(e)}")
+
+
+@app.post("/api/backup/restore")
+async def restore_backup(backup_name: str):
+    """从指定备份恢复数据（会覆盖当前数据！）"""
+    from app.core.data_backup import restore_backup
+    try:
+        result = restore_backup(backup_name)
+        return {"success": True, **result}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"备份文件不存在: {backup_name}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"恢复失败: {str(e)}")
+
+
 # ── 系统接口 ──
 
 @app.get("/api/health")
 async def health_check():
     from app.services.embedding_svc import _embedding_model
+    from app.services.llm.base import LLMFactory
+
+    # 检查 LLM 平台可用性
+    settings = load_settings()
+    api_keys = load_api_keys()
+    available_llm = []
+    for pk, cfg in settings.get("llm", {}).get("platforms", {}).items():
+        ki = api_keys.get("platforms", {}).get(pk, {})
+        if ki.get("api_key", "") and "your-" not in ki.get("api_key", ""):
+            available_llm.append(pk)
+
     return {
         "status": "ok",
         "version": "2.0.0-personal",
         "embedding_model_loaded": _embedding_model is not None,
+        "model_status": "ready" if _embedding_model is not None else "loading/下载中",
+        "llm_platforms_available": available_llm,
+        "llm_count": len(available_llm),
+        "features": {
+            "cleaning": True,
+            "geo_rewrite": len(available_llm) > 0,
+            "evaluation": _embedding_model is not None and len(available_llm) > 0,
+            "brand_monitor": len(available_llm) > 0,
+            "publish_adapt": len(available_llm) > 0,
+        },
     }
 
 

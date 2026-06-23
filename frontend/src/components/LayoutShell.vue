@@ -16,6 +16,8 @@
         text-color="#B8BAC8"
         active-text-color="#D4A855"
       >
+        <!-- ═══ 核心流程 ═══ -->
+        <div class="menu-divider">📋 核心流程</div>
         <el-menu-item index="/dashboard">
           <el-icon><HomeFilled /></el-icon>
           <span>工作台</span>
@@ -36,54 +38,78 @@
           <el-icon><Download /></el-icon>
           <span>成果导出</span>
         </el-menu-item>
-        <div class="menu-divider">策略中心</div>
+
+        <!-- ═══ 策略与监测 ═══ -->
+        <div class="menu-divider">📊 策略与监测</div>
         <el-menu-item index="/strategy">
           <el-icon><TrendCharts /></el-icon>
           <span>策略中心</span>
         </el-menu-item>
-        <el-menu-item index="/templates">
-          <el-icon><Document /></el-icon>
-          <span>内容规范</span>
+        <el-menu-item index="/brand-monitor">
+          <el-icon><Monitor /></el-icon>
+          <span>AI收录监测</span>
         </el-menu-item>
         <el-menu-item index="/batch">
           <el-icon><FolderOpened /></el-icon>
           <span>批量处理</span>
         </el-menu-item>
-        <div class="menu-divider">监测</div>
-        <el-menu-item index="/brand-monitor">
-          <el-icon><Monitor /></el-icon>
-          <span>AI收录监测</span>
-        </el-menu-item>
-        <div class="menu-divider">转化追踪</div>
-        <el-menu-item index="/full-funnel">
-          <el-icon><TrendCharts /></el-icon>
-          <span>全域转化漏斗</span>
-        </el-menu-item>
-        <el-menu-item index="/conversion-attribution">
-          <el-icon><PieChart /></el-icon>
-          <span>转化归因</span>
-        </el-menu-item>
-        <el-menu-item index="/utm-campaigns">
-          <el-icon><Link /></el-icon>
-          <span>UTM追踪</span>
-        </el-menu-item>
-        <div class="menu-divider">系统</div>
-        <el-menu-item index="/scheduler">
-          <el-icon><Timer /></el-icon>
-          <span>定时任务</span>
-        </el-menu-item>
-        <el-menu-item index="/logs">
-          <el-icon><Setting /></el-icon>
-          <span>系统日志</span>
-        </el-menu-item>
-        <el-menu-item index="/audit">
-          <el-icon><Clock /></el-icon>
-          <span>审计日志</span>
-        </el-menu-item>
-        <el-menu-item index="/seo">
-          <el-icon><Connection /></el-icon>
-          <span>SEO集成</span>
-        </el-menu-item>
+
+        <!-- ═══ 高级功能（可折叠）═══ -->
+        <el-sub-menu index="advanced" v-if="true">
+          <template #title>
+            <el-icon><SetUp /></el-icon>
+            <span>高级功能</span>
+          </template>
+          <el-menu-item index="/template-engine">
+            <span>模板引擎</span>
+          </el-menu-item>
+          <el-menu-item index="/adaptation">
+            <span>适配流水线</span>
+          </el-menu-item>
+          <el-menu-item index="/feedback">
+            <span>数据闭环</span>
+          </el-menu-item>
+          <el-menu-item index="/seo">
+            <span>SEO集成</span>
+          </el-menu-item>
+          <el-menu-item index="/templates">
+            <span>内容规范</span>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <!-- ═══ 转化追踪（可折叠）═══ -->
+        <el-sub-menu index="conversion" v-if="true">
+          <template #title>
+            <el-icon><TrendCharts /></el-icon>
+            <span>转化追踪</span>
+          </template>
+          <el-menu-item index="/full-funnel">
+            <span>全域漏斗</span>
+          </el-menu-item>
+          <el-menu-item index="/conversion-attribution">
+            <span>转化归因</span>
+          </el-menu-item>
+          <el-menu-item index="/utm-campaigns">
+            <span>UTM追踪</span>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <!-- ═══ 系统管理（可折叠）═══ -->
+        <el-sub-menu index="system">
+          <template #title>
+            <el-icon><Setting /></el-icon>
+            <span>系统管理</span>
+          </template>
+          <el-menu-item index="/scheduler">
+            <span>定时任务</span>
+          </el-menu-item>
+          <el-menu-item index="/logs">
+            <span>系统日志</span>
+          </el-menu-item>
+          <el-menu-item index="/audit">
+            <span>审计日志</span>
+          </el-menu-item>
+        </el-sub-menu>
       </el-menu>
 
       <div class="sidebar-footer">

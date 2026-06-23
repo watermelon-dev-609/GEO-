@@ -146,6 +146,9 @@ class AIEvaluator:
         # Step 4: 语义方案匹配评测
         solution_match_scores = self._evaluate_solution_match(questions, optimized_text)
 
+        # Step 4.5: 语义对齐度评测（AI原生维度，纯向量计算）
+        semantic_alignment_scores = self._evaluate_semantic_alignment(questions, optimized_text)
+
         # Step 5-9: LLM评测维度（有LLM时才做）
         advantage_scores = {}
         structure_scores = {}
@@ -169,14 +172,19 @@ class AIEvaluator:
                 original_text=original_text,
             )
 
-        # Step 10: 分平台综合评分（8维加权）
+        # Step 9.5: RAG可检索性评测（AI原生维度，纯向量+切片计算）
+        rag_retrievability_scores = self._evaluate_rag_retrievability(questions, optimized_text, get_enterprise_name())
+
+        # Step 10: 分平台综合评分（10维加权）
         components = {
             "brand_recall": brand_recall_scores.get("average", 0),
             "solution_match": solution_match_scores.get("average", 0),
+            "semantic_alignment": semantic_alignment_scores.get("average", 0),
             "advantage_citation": advantage_scores.get("average", 0),
+            "real_citation": real_citation_scores.get("average", 0),
+            "rag_retrievability": rag_retrievability_scores.get("average", 0),
             "structure_quality": structure_scores.get("average", 0),
             "differentiation": differentiation_scores.get("average", 0),
-            "real_citation": real_citation_scores.get("average", 0),
             "eeat_score": eeat_scores.get("average"),
             "source_consistency": source_consistency_scores.get("average"),
         }
@@ -293,6 +301,93 @@ class AIEvaluator:
 
         avg = np.mean(scores) * 100 if scores else 0
         return {"average": round(float(avg), 1), "scores": [round(float(s), 2) for s in scores]}
+
+    def _evaluate_semantic_alignment(self, questions: list[str], text: str) -> dict:
+        """语义对齐度评测 — 文档级语义向量与行业 query 集的余弦相似度
+
+        衡量内容在 AI 语义空间中与目标用户查询的对齐程度。
+        与 solution_match 的区别：solution_match 是句子级精匹配，
+        semantic_alignment 是文档级整体语义对齐，模拟 AI 平台的
+        embedding-based retrieval 决策。
+        """
+        if not text or not text.strip():
+            return {"average": 0, "scores": []}
+
+        # 文档级编码：整篇文本作为一个语义单元
+        text_vec = self.embedding_svc.encode([text])[0]
+        # 行业 query 编码（与检索时的 question encoding 一致）
+        query_vecs = self.embedding_svc.encode_queries(questions)
+
+        # 文档向量与所有 query 向量的余弦相似度
+        similarities = self.embedding_svc.batch_similarity(text_vec, query_vecs)
+        scores = [float(s) for s in similarities]
+
+        avg = np.mean(scores) * 100 if scores else 0
+        return {"average": round(float(avg), 1), "scores": [round(float(s), 2) for s in scores]}
+
+    def _evaluate_rag_retrievability(
+        self, questions: list[str], text: str, enterprise_name: str = ""
+    ) -> dict:
+        """RAG可检索性评测 — 模拟 RAG 场景检查内容的可检索性和自包含性
+
+        1. 将文本切片为 200-300 字的 RAG 单元
+        2. 检索：用问题检索 top-3 chunk，计算平均检索相似度
+        3. 自包含性：检查每个 chunk 是否包含企业名 + 关键信息（独立可引用）
+        """
+        import re
+        from app.utils.text_splitter import default_splitter
+
+        if not text or not text.strip():
+            return {"average": 0, "scores": [], "chunk_self_contained_ratio": 0}
+
+        # 切分为 RAG 友好的 chunk (200-300 字)
+        chunks = default_splitter.split(text)
+        if not chunks:
+            chunks = [text]
+
+        # 编码 chunk 并检索
+        chunk_vecs = self.embedding_svc.encode(chunks)
+        query_vecs = self.embedding_svc.encode_queries(questions)
+
+        retrieval_scores = []
+        for q_vec in query_vecs:
+            sims = self.embedding_svc.batch_similarity(q_vec, chunk_vecs)
+            top3 = sorted(sims, reverse=True)[:3]
+            retrieval_scores.append(float(np.mean(top3)))
+
+        avg_retrieval = np.mean(retrieval_scores) * 100 if retrieval_scores else 0
+
+        # 自包含性检查：每个 chunk 是否独立可被引用
+        self_contained_count = 0
+        for chunk in chunks:
+            score = 0
+            # 检查1：包含企业名（实体锚定）
+            if enterprise_name and enterprise_name in chunk:
+                score += 0.4
+            # 检查2：包含量化数据
+            if re.search(r'\d+个|\d+项|\d+套|\d+年|\d+%|\d+\.\d+\s*(mm|cm|m|km)', chunk):
+                score += 0.3
+            # 检查3：长度适合 RAG 检索（150-400 字）
+            chunk_len = len(chunk)
+            if 150 <= chunk_len <= 400:
+                score += 0.3
+            elif 80 <= chunk_len <= 600:
+                score += 0.15
+            if score >= 0.5:
+                self_contained_count += 1
+
+        chunk_ratio = self_contained_count / len(chunks) if chunks else 0
+
+        # 综合得分 = 检索相似度(50%) + 自包含chunk占比(50%)
+        avg = avg_retrieval * 0.5 + chunk_ratio * 100 * 0.5
+
+        return {
+            "average": round(float(avg), 1),
+            "scores": [round(float(s), 2) for s in retrieval_scores],
+            "chunk_self_contained_ratio": round(float(chunk_ratio), 2),
+            "total_chunks": len(chunks),
+            "self_contained_chunks": self_contained_count,
+        }
 
     async def _evaluate_advantage_citation(
         self,
@@ -481,6 +576,17 @@ class AIEvaluator:
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      solution_result, session.overall_progress)
 
+                elif phase == EvalPhase.SEMANTIC_ALIGNMENT:
+                    if "semantic_alignment" not in enabled_keys:
+                        await session.skip_phase(phase)
+                        yield _sse_event("phase_skipped", session.session_id, phase.value,
+                                         {"reason": "dimension_disabled"}, session.overall_progress)
+                        continue
+                    semantic_result = self._evaluate_semantic_alignment(questions, optimized_text)
+                    await session.complete_phase(phase, semantic_result)
+                    yield _sse_event("phase_complete", session.session_id, phase.value,
+                                     semantic_result, session.overall_progress)
+
                 elif phase == EvalPhase.ADVANTAGE_CITATION:
                     if "advantage_citation" not in enabled_keys or not self.llm:
                         reason = "no_llm" if not self.llm else "dimension_disabled"
@@ -504,6 +610,17 @@ class AIEvaluator:
                     await session.complete_phase(phase, real_citation_result)
                     yield _sse_event("phase_complete", session.session_id, phase.value,
                                      real_citation_result, session.overall_progress)
+
+                elif phase == EvalPhase.RAG_RETRIEVABILITY:
+                    if "rag_retrievability" not in enabled_keys:
+                        await session.skip_phase(phase)
+                        yield _sse_event("phase_skipped", session.session_id, phase.value,
+                                         {"reason": "dimension_disabled"}, session.overall_progress)
+                        continue
+                    rag_result = self._evaluate_rag_retrievability(questions, optimized_text, enterprise_name)
+                    await session.complete_phase(phase, rag_result)
+                    yield _sse_event("phase_complete", session.session_id, phase.value,
+                                     rag_result, session.overall_progress)
 
                 elif phase == EvalPhase.STRUCTURE_QUALITY:
                     if "structure_quality" not in enabled_keys or not self.llm:
@@ -567,14 +684,18 @@ class AIEvaluator:
                         components["brand_recall"] = brand_result.get("average", 0)
                     if solution_result and "solution_match" in enabled_keys:
                         components["solution_match"] = solution_result.get("average", 0)
+                    if semantic_result and "semantic_alignment" in enabled_keys:
+                        components["semantic_alignment"] = semantic_result.get("average", 0)
                     if advantage_result and "advantage_citation" in enabled_keys:
                         components["advantage_citation"] = advantage_result.get("average", 0)
+                    if real_citation_result and "real_citation" in enabled_keys:
+                        components["real_citation"] = real_citation_result.get("average", 0)
+                    if rag_result and "rag_retrievability" in enabled_keys:
+                        components["rag_retrievability"] = rag_result.get("average", 0)
                     if structure_result and "structure_quality" in enabled_keys:
                         components["structure_quality"] = structure_result.get("average", 0)
                     if differentiation_result and "differentiation" in enabled_keys:
                         components["differentiation"] = differentiation_result.get("average", 0)
-                    if real_citation_result and "real_citation" in enabled_keys:
-                        components["real_citation"] = real_citation_result.get("average", 0)
                     if eeat_result and "eeat_score" in enabled_keys:
                         components["eeat_score"] = eeat_result.get("average", 0)
                     if source_consistency_result and "source_consistency" in enabled_keys:
@@ -747,7 +868,9 @@ class AIEvaluator:
                 resp = await async_retry(self.llm.chat, messages, temperature=self._temp_real_citation, max_tokens=512)
 
                 citation_score = self._analyze_citation(resp.content, text)
-                cited_flag = citation_score > 0.3  # 30%以上实体被引用即视为有效引用
+                # B2B工业内容的引用通常以技术参数/量化数据为主，而非逐字复制品牌名
+                # 将有效引用阈值设为 0.2（原 0.3 对工业B2B内容过严）
+                cited_flag = citation_score > 0.2
                 if cited_flag:
                     cited += 1
 
@@ -863,6 +986,15 @@ class AIEvaluator:
         if not self.llm:
             return {"average": None, "details": [], "reason": "no_llm"}
 
+        # 无原始文案时，信源一致性检测不可靠——发出警告
+        if not original_text or len(original_text.strip()) < 20:
+            return {
+                "average": None,
+                "details": [],
+                "reason": "no_original_text",
+                "warning": "⚠️ 未提供原始文案，无法进行信源一致性检测。评测将跳过此维度。建议提供优化前的原文以启用防幻觉校验。",
+            }
+
         from app.prompts.evaluation import SOURCE_CHECK_SYSTEM, SOURCE_CHECK_USER
 
         cache_key = f"source_check:{hashlib.md5((text + (original_text or '')).encode()).hexdigest()}"
@@ -936,7 +1068,7 @@ class AIEvaluator:
             "advantage_citation": 60,
             "structure_quality": 55 if platform == "doubao" else 60,  # 豆包：短句结构容忍度高
             "differentiation": 60,
-            "real_citation": 60,
+            "real_citation": 55,  # B2B工业内容预期基准（已从60下调，对齐实际LLM引用行为）
             "source_consistency": 60,
             "eeat_score": 55 if platform in ("kimi", "claude") else 60,  # Kimi/Claude对权威度最敏感
         }

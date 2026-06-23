@@ -1,0 +1,24 @@
+{
+  "incident_id": "inc_20260616_020419_f3128da2",
+  "platform": "doubao",
+  "query": "test",
+  "brand_mentioned": false,
+  "sentiment": null,
+  "ai_response_snippet": "test",
+  "severity": "low",
+  "status": "open",
+  "created_at": "2026-06-16T02:04:19.964633+00:00",
+  "resolved_at": null,
+  "correction_content": null,
+  "correction_published": false,
+  "timeline": [
+    {
+      "timestamp": "2026-06-16T02:04:19.964633+00:00",
+      "action": "created",
+      "status": "open",
+      "notes": "自动创建 - 严重度: low"
+    }
+  ],
+  "notes": [],
+  "extra": {}
+}

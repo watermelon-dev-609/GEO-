@@ -205,12 +205,12 @@ class TestBuildGeoPrompt:
         )
         assert "800-1500字" in system_prompt
 
-    def test_unknown_sandtable_falls_back_to_smart_city(self):
+    def test_unknown_sandtable_falls_back_to_general(self):
         system_prompt, user_message = build_geo_prompt(
             sandtable_type="nonexistent_type",
             platform="deepseek",
         )
-        assert "智慧城市" in system_prompt
+        assert "沙盘模型" in system_prompt  # falls back to "general" profile
 
     def test_unknown_platform_falls_back_to_deepseek(self):
         system_prompt, user_message = build_geo_prompt(

@@ -14,8 +14,8 @@ from app.models.enums import (
 
 
 class TestSandtableType:
-    def test_8_members(self):
-        assert len(SandtableType) == 8
+    def test_9_members(self):
+        assert len(SandtableType) == 9
 
     def test_all_have_labels(self):
         for st in SandtableType:
@@ -28,6 +28,7 @@ class TestSandtableType:
         assert "military" in cats
         assert "digital_media" in cats
         assert "real_estate" in cats
+        assert "general" in cats
 
     def test_smart_types_share_category(self):
         for st in [SandtableType.SMART_TRAFFIC, SandtableType.SMART_CITY,
@@ -74,8 +75,8 @@ class TestUserRole:
 
 
 class TestEvalDimension:
-    def test_8_members(self):
-        assert len(EvalDimension) == 8
+    def test_10_members(self):
+        assert len(EvalDimension) == 10  # 8 original + semantic_alignment + rag_retrievability
 
 
 class TestContentFormat:
@@ -89,8 +90,8 @@ class TestExportFormat:
 
 
 class TestEvalPhase:
-    def test_10_members(self):
-        assert len(EvalPhase) == 10
+    def test_12_members(self):
+        assert len(EvalPhase) == 12  # 10 original + semantic_alignment + rag_retrievability
 
     def test_all_have_labels(self):
         for p in EvalPhase:
@@ -100,11 +101,11 @@ class TestEvalPhase:
         orders = [p.order for p in EvalPhase]
         assert len(orders) == len(set(orders))
         assert min(orders) == 0
-        assert max(orders) == 9
+        assert max(orders) == 11
 
     def test_order_sequence(self):
         assert EvalPhase.GENERATING_QUESTIONS.order == 0
-        assert EvalPhase.COMPREHENSIVE.order == 9
+        assert EvalPhase.COMPREHENSIVE.order == 11
 
 
 class TestEvalPhaseStatus:

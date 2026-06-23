@@ -1,0 +1,19 @@
+{
+  "run_id": "adapt_20260613_183818_39de20",
+  "platform_id": "base",
+  "trigger_event": "{\"source\": \"watchdog_yaml_change\", \"platform_id\": \"base\", \"changed_file\": \"D:\\\\GEO生成式搜索优化轻量化技术方案\\\\geo-optimizer\\\\backend\\\\data\\\\platform_templates\\\\base.yaml\", \"old_hash\": \"\", \"new_hash\": \"be933a9cfb3",
+  "stage": "monitor_detected",
+  "status": "pending",
+  "created_at": "2026-06-13T10:38:18.850785+00:00",
+  "completed_at": "",
+  "articles_affected": 0,
+  "articles_regenerated": 0,
+  "articles_validated": 0,
+  "articles_published": 0,
+  "rollback_version_id": "",
+  "template_version_before": "v1",
+  "template_version_after": "",
+  "validation_errors": [],
+  "notes": [],
+  "stage_label": "监控发现变化"
+}

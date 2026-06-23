@@ -109,6 +109,33 @@ ERROR_CODES: dict[str, dict] = {
         "suggestion": "任务已被手动取消。可重新发起批量处理。",
         "severity": "low",
     },
+
+    # 品牌舆情管理类
+    "GEO_100": {
+        "message": "情感分析失败",
+        "suggestion": "AI回复文本过短或无法解析。请确认回复内容完整，或尝试手动标注情感。",
+        "severity": "medium",
+    },
+    "GEO_101": {
+        "message": "事实核查失败",
+        "suggestion": "缺少品牌知识库信息，无法进行事实比对。请完善品牌基本资料后重试。",
+        "severity": "low",
+    },
+    "GEO_102": {
+        "message": "纠正内容生成失败",
+        "suggestion": "LLM服务不可用或输入信息不足。请检查API密钥配置，或使用规则模板生成基础纠正内容。",
+        "severity": "medium",
+    },
+    "GEO_103": {
+        "message": "舆情事件不存在",
+        "suggestion": "指定的事件ID不存在或已被删除。请检查事件列表获取有效ID。",
+        "severity": "low",
+    },
+    "GEO_104": {
+        "message": "舆情事件状态流转不合法",
+        "suggestion": "当前状态不允许直接变更到目标状态。请按照 open→investigating→responding→resolved 顺序处理。",
+        "severity": "medium",
+    },
 }
 
 
@@ -139,5 +166,10 @@ def get_error_code_by_category(category: str) -> str:
         "low_quality": "GEO_031",
         "source_mismatch": "GEO_033",
         "system": "GEO_040",
+        "sentiment": "GEO_100",
+        "fact_check": "GEO_101",
+        "correction": "GEO_102",
+        "incident_not_found": "GEO_103",
+        "invalid_transition": "GEO_104",
     }
     return mapping.get(category, "GEO_001")

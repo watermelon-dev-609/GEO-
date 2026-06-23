@@ -1,0 +1,19 @@
+{
+  "run_id": "adapt_20260613_102908_75a785",
+  "platform_id": "yuanbao",
+  "trigger_event": "{\"source\": \"watchdog_yaml_change\", \"platform_id\": \"yuanbao\", \"changed_file\": \"D:\\\\GEO生成式搜索优化轻量化技术方案\\\\geo-optimizer\\\\backend\\\\data\\\\platform_templates\\\\yuanbao.yaml\", \"old_hash\": \"\", \"new_hash\": \"47cca",
+  "stage": "monitor_detected",
+  "status": "pending",
+  "created_at": "2026-06-13T02:29:08.661310+00:00",
+  "completed_at": "",
+  "articles_affected": 0,
+  "articles_regenerated": 0,
+  "articles_validated": 0,
+  "articles_published": 0,
+  "rollback_version_id": "",
+  "template_version_before": "v1",
+  "template_version_after": "",
+  "validation_errors": [],
+  "notes": [],
+  "stage_label": "监控发现变化"
+}

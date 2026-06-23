@@ -1,0 +1,19 @@
+{
+  "run_id": "adapt_20260619_162223_1ac8b8",
+  "platform_id": "openai",
+  "trigger_event": "{\"source\": \"watchdog_yaml_change\", \"platform_id\": \"openai\", \"changed_file\": \"D:\\\\GEO生成式搜索优化轻量化技术方案\\\\geo-optimizer\\\\backend\\\\data\\\\platform_templates\\\\openai.yaml\", \"old_hash\": \"\", \"new_hash\": \"1a25ef7",
+  "stage": "monitor_detected",
+  "status": "pending",
+  "created_at": "2026-06-19T08:22:23.134660+00:00",
+  "completed_at": "",
+  "articles_affected": 0,
+  "articles_regenerated": 0,
+  "articles_validated": 0,
+  "articles_published": 0,
+  "rollback_version_id": "",
+  "template_version_before": "v1",
+  "template_version_after": "",
+  "validation_errors": [],
+  "notes": [],
+  "stage_label": "监控发现变化"
+}

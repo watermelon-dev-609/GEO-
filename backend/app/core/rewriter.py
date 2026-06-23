@@ -3,6 +3,7 @@
 from __future__ import annotations
 import asyncio
 import hashlib
+import json
 import logging
 import time
 from typing import AsyncIterator
@@ -13,6 +14,8 @@ from app.models.schemas import PlatformRewriteResult
 from app.services.llm.base import BaseLLMAdapter, LLMMessage, LLMFactory
 from app.prompts.rewrite import build_geo_prompt, get_sandtable_profile, get_platform_rules
 from app.utils.retry import async_retry
+from app.utils.cache import geo_cache
+from app.utils.config import load_settings, load_api_keys, get_enterprise_name, get_enterprise_location
 
 
 def _get_platform_max_tokens(platform: AIPlatform) -> int:
@@ -71,8 +74,7 @@ def _truncate_to_platform_limit(text: str, platform: AIPlatform) -> str:
             return truncated[:last_sent + 1]
 
     return truncated.rstrip()
-from app.utils.cache import geo_cache
-from app.utils.config import load_settings, load_api_keys, get_enterprise_name, get_enterprise_location
+
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,8 @@ class GEORewriter:
     def __init__(self):
         self.settings = load_settings()
         self.api_keys = load_api_keys()
+        # 从配置读取改写温度（默认0.5，保证一致性）
+        self._rewrite_temp = float(self.settings.get("llm", {}).get("rewrite_temperature", 0.5))
 
     def _get_adapter(self, platform: AIPlatform) -> BaseLLMAdapter:
         """获取指定平台的LLM适配器"""
@@ -122,6 +126,8 @@ class GEORewriter:
         optimization_rules: dict | None = None,
         enterprise_name: str | None = None,
         enterprise_location: str | None = None,
+        query_intent: str | None = None,
+        diversity_seed: str | None = None,
     ) -> list[PlatformRewriteResult]:
         """批量重构：对多个平台并行生成优化文案"""
         if not enterprise_name:
@@ -136,7 +142,20 @@ class GEORewriter:
             competitor_insights = self._auto_load_competitor_insights(sandtable_type)
 
         for platform in platforms:
-            cache_key = f"{sandtable_type.value}:{platform.value}:{hashlib.md5(cleaned_text.encode()).hexdigest()}"
+            # 缓存键包含所有影响产出的参数，避免策略变更后命中旧缓存
+            cache_parts = [
+                sandtable_type.value,
+                platform.value,
+                hashlib.md5(cleaned_text.encode()).hexdigest(),
+                hashlib.md5(json.dumps(dimensions or {}, sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
+                hashlib.md5(json.dumps(optimization_hints or [], sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
+                hashlib.md5((competitor_insights or "").encode()).hexdigest(),
+                hashlib.md5((enterprise_name or "").encode()).hexdigest(),
+                hashlib.md5((enterprise_location or "").encode()).hexdigest(),
+                hashlib.md5(json.dumps(optimization_rules or {}, sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
+                hashlib.md5((query_intent or "").encode()).hexdigest(),
+            ]
+            cache_key = ":".join(cache_parts)
             cached = geo_cache.get(cache_key)
             if cached:
                 tasks.append(self._return_cached(cached, platform))
@@ -146,6 +165,8 @@ class GEORewriter:
                     dimensions, optimization_hints, competitor_insights,
                     optimization_rules,
                     enterprise_name, enterprise_location, cache_key,
+                    query_intent=query_intent,
+                    diversity_seed=diversity_seed,
                 ))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -178,6 +199,8 @@ class GEORewriter:
         enterprise_name: str,
         enterprise_location: str,
         cache_key: str,
+        query_intent: str | None = None,
+        diversity_seed: str | None = None,
     ) -> PlatformRewriteResult:
         """对单个平台生成优化文案"""
         try:
@@ -200,6 +223,8 @@ class GEORewriter:
             optimization_hints=optimization_hints,
             competitor_insights=competitor_insights,
             optimization_rules=optimization_rules,
+            query_intent=query_intent,
+            diversity_seed=diversity_seed,
         )
 
         # 五维信息也补充到user_message中
@@ -217,12 +242,17 @@ class GEORewriter:
         ]
 
         max_tokens = _get_platform_max_tokens(platform)
-        resp = await async_retry(adapter.chat, messages, temperature=0.7, max_tokens=max_tokens)
+        resp = await async_retry(adapter.chat, messages, temperature=self._rewrite_temp, max_tokens=max_tokens)
 
         # 后处理校验
         validated_text, warnings = self._validate_output(
             resp.content, sandtable_type, platform, enterprise_name, enterprise_location
         )
+
+        # 反向编造检测：输出中的量化数据是否在原文中不存在
+        fabrication_warnings = self._check_fabrication(validated_text, cleaned_text)
+        if fabrication_warnings:
+            warnings.extend(fabrication_warnings)
 
         strategy = self._build_strategy_notes(platform, sandtable_type)
         if warnings:
@@ -251,6 +281,8 @@ class GEORewriter:
         optimization_rules: dict | None = None,
         enterprise_name: str | None = None,
         enterprise_location: str | None = None,
+        query_intent: str | None = None,
+        diversity_seed: str | None = None,
     ) -> AsyncIterator[dict]:
         """流式生成单平台文案（SSE）"""
         if not enterprise_name:
@@ -268,6 +300,8 @@ class GEORewriter:
             optimization_hints=optimization_hints,
             competitor_insights=competitor_insights,
             optimization_rules=optimization_rules,
+            query_intent=query_intent,
+            diversity_seed=diversity_seed,
         )
 
         dims_text = ""
@@ -299,7 +333,7 @@ class GEORewriter:
         # 流式输出正文
         full_text = ""
         max_tokens = _get_platform_max_tokens(platform)
-        async for token in adapter.stream_chat(messages, temperature=0.7, max_tokens=max_tokens):
+        async for token in adapter.stream_chat(messages, temperature=self._rewrite_temp, max_tokens=max_tokens):
             full_text += token
             yield {"type": "token", "content": token}
 
@@ -325,32 +359,107 @@ class GEORewriter:
         return PlatformRewriteResult(**cached_data)
 
     def _auto_load_competitor_insights(self, sandtable_type: SandtableType) -> str | None:
-        """自动加载最新竞品对比摘要作为差异化洞察"""
+        """自动加载最新竞品对比摘要作为差异化洞察
+
+        两层数据源：
+        1. 竞品监控结果（data/competitors/monitoring/latest.json → cycle_*.json）
+           — 包含 AI 平台上实际探测到的竞品内容特征
+        2. 手动竞品档案（data/competitors/*.json）
+           — 用户手动录入的竞品信息
+
+        优先使用监控数据（更真实反映 AI 平台的竞品引用情况），
+        无监控数据或监控数据不可用时回退到手动档案。
+        """
         import json
         from pathlib import Path
         from app.utils.config import get_data_dir
+
+        insights_parts = []
+        monitor_data_loaded = False  # 独立标志位，避免部分成功时错误跳过兜底
+
+        # ── 第一层：竞品监控数据（AI 平台实采） ──
+        monitor_dir = get_data_dir() / "competitors" / "monitoring"
+        if monitor_dir.exists():
+            try:
+                latest_ptr = monitor_dir / "latest.json"
+                if latest_ptr.exists():
+                    with open(latest_ptr, "r", encoding="utf-8") as f:
+                        ptr = json.load(f)
+                    cycle_file = monitor_dir / f"{ptr.get('cycle_id', '')}.json"
+                    if cycle_file.exists():
+                        with open(cycle_file, "r", encoding="utf-8") as f:
+                            monitor_data = json.load(f)
+
+                        results = monitor_data.get("results", [])
+                        if results:
+                            # 提取所有竞品的高频内容特征
+                            all_features = {}
+                            source_platforms = set()
+                            for comp_result in results:
+                                comp_name = comp_result.get("competitor_name", "")
+                                platform_probes = comp_result.get("platform_probes", {})
+                                for plat, probe in platform_probes.items():
+                                    feats = probe.get("content_features", [])
+                                    if feats:
+                                        source_platforms.add(plat)
+                                        key = comp_name or "竞品"
+                                        if key not in all_features:
+                                            all_features[key] = {}
+                                        for feat in feats:
+                                            all_features[key][feat] = all_features[key].get(feat, 0) + 1
+
+                            # 生成差异化建议
+                            if all_features:
+                                insights_parts.append(
+                                    "## 竞品AI引用特征分析（自动监控数据）\n"
+                                    f"以下数据来自 {len(source_platforms)} 个AI平台的最新竞品监控：\n"
+                                )
+                                for comp_name, features in all_features.items():
+                                    top_features = sorted(features.items(), key=lambda x: x[1], reverse=True)[:5]
+                                    if top_features:
+                                        insights_parts.append(
+                                            f"**{comp_name}** 被 AI 引用时的内容特征：\n" +
+                                            "\n".join(f"- {feat}（被检测 {cnt} 次）" for feat, cnt in top_features)
+                                        )
+                                insights_parts.append(
+                                    "\n请在生成文案时确保以下差异化：\n"
+                                    "1. 在竞品高频特征上做到更强（如竞品缺少FAQ结构，则加强FAQ；如竞品缺少量化数据，则增加数据密度）\n"
+                                    "2. 在竞品薄弱的维度建立壁垒（如竞品Schema使用率低，则强化Schema.org语义标注）\n"
+                                    "3. 信源归属上做出区分（如竞品偏知乎/搜狐，则在内容中嵌入更多元化的信源引用）"
+                                )
+                                monitor_data_loaded = True
+            except Exception as e:
+                logger.warning(f"加载竞品监控数据失败，将回退到手动档案: {e}")
+
+        # ── 第二层：手动竞品档案（兜底：监控数据不可用时启用） ──
         comp_dir = get_data_dir() / "competitors"
-        if not comp_dir.exists():
+        comp_files = sorted(
+            [f for f in comp_dir.glob("*.json") if "monitoring" not in str(f.relative_to(comp_dir))],
+            key=lambda f: f.stat().st_mtime, reverse=True,
+        ) if comp_dir.exists() else []
+
+        if comp_files and not monitor_data_loaded:
+            try:
+                with open(comp_files[0], "r", encoding="utf-8") as f:
+                    latest = json.load(f)
+                name = latest.get("name", "未知竞品")
+                sandtable = latest.get("sandtable_type", "")
+                features = latest.get("content_features", {})
+                if features:
+                    insights_parts.append(f"竞品「{name}」（{sandtable}）内容特征分析：")
+                    for key, val in features.items():
+                        if isinstance(val, list):
+                            insights_parts.append(f"- {key}: {', '.join(str(v) for v in val)}")
+                        else:
+                            insights_parts.append(f"- {key}: {val}")
+                    insights_parts.append("\n请在生成文案时主动体现与以上竞品的差异化优势。")
+            except Exception as e:
+                logger.warning(f"加载竞品档案失败: {e}")
+
+        if not insights_parts:
             return None
-        comp_files = sorted(comp_dir.glob("*.json"))
-        if not comp_files:
-            return None
-        try:
-            with open(comp_files[-1], "r", encoding="utf-8") as f:
-                latest = json.load(f)
-            name = latest.get("name", "未知竞品")
-            sandtable = latest.get("sandtable_type", "")
-            features = latest.get("content_features", {})
-            if not features:
-                return None
-            insights = f"竞品「{name}」（{sandtable}）内容特征分析：\n"
-            for key, val in features.items():
-                insights += f"- {key}: {val}\n"
-            insights += "\n请在生成文案时主动体现与以上竞品的差异化优势。"
-            return insights
-        except Exception as e:
-            logger.warning(f"加载竞品洞察失败: {e}")
-            return None
+
+        return "\n".join(insights_parts)
 
     def _validate_output(
         self,
@@ -363,25 +472,32 @@ class GEORewriter:
         """输出校验 — 检查关键信息完整性，不达标自动补充
 
         校验项：
-        1. 企业名称是否完整出现（缺失则自动补充到文首）
+        1. 企业名称是否完整出现（支持模糊匹配，缺失则自动补充）
         2. 地域标识是否存在
         3. 量化数据是否达标（数字+单位模式）
         4. 五维信息是否全覆盖
-        5. 无冗余、无堆砌、无违规表述
+        5. 反向编造检测（输出中新增的量化数据是否原文不存在）
+        6. 字数硬截断兜底
         """
         import re
         warnings = []
 
-        # 校验项1：企业名称是否完整出现（缺失则自动补充）
-        if enterprise_name not in text:
+        # ── 校验项1：企业名称完整性（模糊匹配 + 严格匹配双轨） ──
+        name_found = False
+        if enterprise_name in text:
+            name_found = True
+        else:
+            # 模糊匹配：编辑距离 ≤ 2 视为通过（容忍繁简混用、空格差异）
+            name_found = self._fuzzy_name_match(enterprise_name, text)
+        if not name_found:
             text = f"**{enterprise_name}**\n\n{text}"
             warnings.append("企业名称缺失，已自动补充到文首")
 
-        # 校验项2：地域标识是否存在
+        # ── 校验项2：地域标识检查 ──
         if enterprise_location and enterprise_location not in text:
             warnings.append(f"地域标识'{enterprise_location}'未在文中出现")
 
-        # 校验项3：量化数据是否达标（数字+单位模式，如"200个项目""1:1000""15年"）
+        # ── 校验项3：量化数据达标检查 ──
         quant_patterns = [
             r'\d+[+]?\s*(个|项|套|年|㎡|平方米|公里|人|次|万元|亿)',
             r'\d+[:：]\d+',  # 比例
@@ -392,7 +508,7 @@ class GEORewriter:
         if not has_quantified:
             warnings.append("文中未检测到量化数据（数字+单位），AI引用算法对数字信号敏感度更高")
 
-        # 校验项4：五维信息是否全覆盖
+        # ── 校验项4：五维信息覆盖检查 ──
         from app.core.dimensions_shared import DIMENSION_COVERAGE_KEYWORDS
         missing = []
         for dim, keywords in DIMENSION_COVERAGE_KEYWORDS.items():
@@ -404,10 +520,131 @@ class GEORewriter:
         if warnings:
             logger.warning(f"[{sandtable_type.label} × {platform.label}] 输出校验警告: {'; '.join(warnings)}")
 
-        # 校验项5：字数上限硬截断（LLM 经常忽略 prompt 中的字数约束，此处兜底）
+        # ── 校验项5：字数上限硬截断 ──
         text = _truncate_to_platform_limit(text, platform)
 
         return text, warnings
+
+    @staticmethod
+    def _fuzzy_name_match(name: str, text: str) -> bool:
+        """企业名称模糊匹配：容忍最多2个字符差异（繁简/空格/缩写）
+
+        使用滑动窗口 + 简化编辑距离，兼顾性能和准确度。
+        """
+        import unicodedata
+
+        def _normalize(s: str) -> str:
+            """去除空白、全角转半角、繁简归一（NFKC）"""
+            s = unicodedata.normalize('NFKC', s)
+            s = ''.join(c for c in s if not c.isspace())
+            return s
+
+        n_name = _normalize(name)
+        n_text = _normalize(text)
+
+        if not n_name or len(n_name) < 3:
+            return n_name in n_text
+
+        # 如果文本是名称的子串（如"微艺达智能科技" vs "武汉微艺达智能科技有限公司"）
+        # 或名称是文本的子串，均视为匹配
+        if n_name in n_text or n_text in n_name:
+            return True
+
+        name_len = len(n_name)
+        # 滑动窗口：在文本中查找编辑距离≤2的子串
+        # 也处理文本短于名称的情况（检查名称中是否包含文本的近似匹配）
+        text_len = len(n_text)
+        if text_len >= name_len:
+            for start in range(text_len - name_len + 1):
+                window = n_text[start:start + name_len]
+                dist = GEORewriter._edit_distance(n_name, window)
+                if dist <= 2:
+                    return True
+        else:
+            # 文本短于名称：检查文本是否近似匹配名称的某个子串
+            # 例如：text="微艺达智能科技" vs name="武汉微艺达智能科技有限公司"
+            for start in range(name_len - text_len + 1):
+                window = n_name[start:start + text_len]
+                dist = GEORewriter._edit_distance(n_text, window)
+                if dist <= 2:
+                    return True
+
+        # 也检查文本是否包含企业名缩写（取前2字+后2字）
+        if len(n_name) >= 4:
+            abbr = n_name[:2] + n_name[-2:]
+            if abbr in n_text:
+                return True
+
+        return False
+
+    @staticmethod
+    def _edit_distance(s1: str, s2: str) -> int:
+        """Levenshtein编辑距离（DP优化版，仅计算≤2的短距离）"""
+        if s1 == s2:
+            return 0
+        len1, len2 = len(s1), len(s2)
+        if abs(len1 - len2) > 2:
+            return 3  # 长度差超过2就不可能是≤2距离
+
+        # 使用双行滚动数组
+        prev = list(range(len2 + 1))
+        curr = [0] * (len2 + 1)
+        for i in range(1, len1 + 1):
+            curr[0] = i
+            for j in range(1, len2 + 1):
+                cost = 0 if s1[i - 1] == s2[j - 1] else 1
+                curr[j] = min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost)
+            # 提前退出：当前行最小值已超过2
+            if min(curr) > 2:
+                return 3
+            prev, curr = curr, prev
+        return min(prev[-1], 3)
+
+    @staticmethod
+    def _check_fabrication(output_text: str, original_text: str) -> list[str]:
+        """反向编造检测：提取输出中的量化数据，检查是否在原文中存在
+
+        遵循"信源忠实原则"——GEO优化可以重组、润色，但不能编造原文不存在的数据。
+        对匹配不上的数据发出警告，但不自动删除（需要人工审核决定是润色扩展还是事实编造）。
+
+        Returns:
+            编造警告列表，每个警告描述一个可疑的新增量化数据
+        """
+        import re
+
+        # 提取量化数据实体
+        quant_extract = re.compile(
+            r'\d+[+]?\s*(?:个|项|套|年|㎡|平方米|公里|人|次|万元|亿元|亿|%|以上|余家|余个)'
+            r'|\d+[:：]\d+'  # 比例
+            r'|\d+\.\d+\s*(?:mm|cm|m|km)'  # 精度单位
+            r'|\d+[-—]\d+'  # 范围
+        )
+        output_quants = set(quant_extract.findall(output_text))
+        original_quants = set(quant_extract.findall(original_text))
+
+        # 在输出中存在但原文不存在的量化数据
+        novel_quants = output_quants - original_quants
+        warnings = []
+        for q in sorted(novel_quants):
+            # 跳过明显是 AI 结构编号的数据（如 "1：" "2." "3、" 等）
+            if re.match(r'^\d+$', q) or re.match(r'^\d+[.、:：]$', q):
+                continue
+            # 跳过很小的整数（可能是年份的一部分或序号）
+            num_part = re.match(r'(\d+)', q)
+            if num_part and int(num_part.group(1)) < 10:
+                continue
+            warnings.append(
+                f"⚠️ 编造检测：输出包含疑似新增量化数据「{q}」，原文中未出现此数据。"
+                f"请人工核实是否属于合理润色（行业通用知识）还是事实编造（需删除）。"
+            )
+
+        if warnings:
+            logger.warning(
+                f"[反编造检测] 发现 {len(warnings)} 个可疑新增数据: "
+                f"{', '.join(w[:50] for w in warnings)}"
+            )
+
+        return warnings
 
     def _build_strategy_notes(self, platform: AIPlatform, sandtable_type: SandtableType) -> str:
         """生成优化策略说明"""

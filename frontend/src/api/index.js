@@ -17,11 +17,40 @@ api.interceptors.response.use(
   }
 )
 
+// ── AbortSignal.any polyfill（兼容旧浏览器）──
+// 原生 AbortSignal.any 在 Chromium <116 / Firefox <130 不可用
+if (!AbortSignal.any) {
+  AbortSignal.any = function (signals) {
+    const controller = new AbortController()
+    const signal = controller.signal
+    // 若任意一个已中止，立即中止合并信号
+    for (const s of signals) {
+      if (s.aborted) {
+        controller.abort(s.reason)
+        return signal
+      }
+    }
+    for (const s of signals) {
+      s.addEventListener('abort', () => controller.abort(s.reason), { once: true })
+    }
+    return signal
+  }
+}
+
 // ── 文本清洗 ──
 export const cleanText = (data) => api.post('/cleaning/clean', data)
 export const extractInfo = (data) => api.post('/cleaning/extract', data)
 export const getCleaningRules = () => api.get('/cleaning/rules')
 export const updateCleaningRules = (data) => api.put('/cleaning/rules', data)
+// 文件导入（Word/PDF/文本）—— 由后端解析后返回文本
+export const importFile = (file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post('/cleaning/import-file', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 30000,
+  })
+}
 
 // ── GEO文案重构 ──
 export const rewriteText = (data, options) => api.post('/geo/rewrite', data, options)
@@ -29,6 +58,10 @@ export const getSandtableProfile = (type) => api.get(`/geo/profiles/${type}`)
 export const getPlatformRules = (platform) => api.get(`/geo/platform-rules/${platform}`)
 export const getOptimizationRules = () => api.get('/geo/optimization-rules')
 export const updateOptimizationRules = (data) => api.put('/geo/optimization-rules', data)
+
+// ── 发布平台适配（GEO优化→各平台即用格式）──
+export const getPublishPlatforms = () => api.get('/geo/publish-platforms')
+export const adaptForPublish = (data) => api.post('/geo/publish-adapt', data)
 
 // ── JSON-LD ──
 export const generateJSONLD = (data) => api.post('/jsonld/generate', data)
@@ -215,6 +248,22 @@ export const getMonitorTrend = (days) => api.get('/brand-monitor/trend', { param
 export const getMonitorQueries = () => api.get('/brand-monitor/queries')
 export const addMonitorQuery = (data) => api.post('/brand-monitor/queries', data)
 export const deleteMonitorQuery = (id) => api.delete(`/brand-monitor/queries/${id}`)
+// 真实AI收录搜索（实际调用AI平台API检索品牌）
+export const realSearch = (data) => api.post('/brand-monitor/real-search', data)
+export const realSearchHistory = (days) => api.get('/brand-monitor/real-search/history', { params: { days } })
+
+// ── 品牌舆情管理 ──
+export const getReputationIncidents = (params) => api.get('/reputation/incidents', { params })
+export const getReputationIncident = (id) => api.get(`/reputation/incidents/${id}`)
+export const createReputationIncident = (params) => api.post('/reputation/incidents', null, { params })
+export const updateIncidentStatus = (id, data) => api.put(`/reputation/incidents/${id}/status`, data)
+export const classifySentiment = (data) => api.post('/reputation/classify', data)
+export const runReputationScan = (data) => api.post('/reputation/scan', data)
+export const generateCorrection = (params) => api.post('/reputation/correct', null, { params })
+export const publishCorrection = (id) => api.post(`/reputation/correct/${id}/publish`)
+export const verifyCorrection = (id) => api.get(`/reputation/correct/${id}/verify`)
+export const getReputationStats = () => api.get('/reputation/stats')
+export const getSentimentTrend = (days) => api.get('/reputation/sentiment-trend', { params: { days } })
 
 // ── 批量处理 ──
 export const batchClean = (data) => api.post('/batch/clean', data)
@@ -240,44 +289,81 @@ function createBatchSSE(url, data, onEvent, onError) {
   const timeoutSignal = AbortSignal.timeout(timeoutMs)
   const combinedSignal = AbortSignal.any([controller.signal, timeoutSignal])
 
-  fetch(fullUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-    signal: combinedSignal,
-  })
-    .then(async (response) => {
-      if (!response.ok) {
-        let detail = response.statusText
-        try { const errBody = await response.json(); detail = errBody.detail || detail } catch {}
-        onError(new Error(detail || '请求失败'))
-        return
-      }
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const content = line.slice(6)
-            if (content === '[DONE]') { onEvent('done', {}); return }
-            try { onEvent('message', JSON.parse(content)) } catch (e) { console.warn('[BatchSSE] parse failed:', content.slice(0, 80)) }
+  let retryCount = 0
+  const MAX_RETRIES = 2
+
+  function connect() {
+    fetch(fullUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      signal: combinedSignal,
+    })
+      .then(async (response) => {
+        retryCount = 0  // 连接成功，重置重试计数
+        if (!response.ok) {
+          let detail = response.statusText
+          try { const errBody = await response.json(); detail = errBody.detail || detail } catch {}
+          onError(new Error(detail || '请求失败'))
+          return
+        }
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const content = line.slice(6)
+              if (content === '[DONE]') {
+                onEvent('done', {}); return
+              }
+              try {
+                onEvent('message', JSON.parse(content))
+              } catch (e) {
+                // 非JSON行静默跳过（可能是SSE注释或心跳）
+              }
+            }
           }
         }
-      }
-    })
-    .catch((err) => {
-      if (err.name === 'TimeoutError' || (err.name === 'AbortError' && timeoutSignal.aborted && !controller.signal.aborted)) {
-        onError(new Error('批量处理请求超时（600秒），请减少批量数量后重试'))
-      } else if (err.name !== 'AbortError') {
-        onError(err)
-      }
-    })
+        // 流正常结束但没有[DONE]标记
+        if (buffer.trim()) {
+          const dm = buffer.match(/^data: (.+)$/)
+          if (dm && dm[1] !== '[DONE]') {
+            try { onEvent('message', JSON.parse(dm[1])) } catch {}
+          }
+        }
+        onEvent('done', {})
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') {
+          if (timeoutSignal.aborted && !controller.signal.aborted && retryCount < MAX_RETRIES) {
+            // 超时但未被用户取消 → 自动重试
+            retryCount++
+            onEvent('retry', { attempt: retryCount, maxRetries: MAX_RETRIES })
+            setTimeout(connect, 1000 * retryCount)  // 递增退避
+            return
+          }
+          if (controller.signal.aborted) return  // 用户主动取消
+          onError(new Error('批量处理请求超时（600秒），请减少批量数量后重试'))
+        } else {
+          // 网络错误 → 自动重试
+          if (retryCount < MAX_RETRIES) {
+            retryCount++
+            onEvent('retry', { attempt: retryCount, maxRetries: MAX_RETRIES })
+            setTimeout(connect, 2000 * retryCount)
+            return
+          }
+          onError(err)
+        }
+      })
+  }
+
+  connect()
 
   return { close: () => controller.abort() }
 }

@@ -298,9 +298,10 @@ describe('Geo Store', () => {
     })
   })
 
-  describe('SessionStorage persistence', () => {
-    it('loads saved state from sessionStorage', () => {
-      sessionStorage.setItem('geo_pipeline_state', JSON.stringify({
+  describe('localStorage persistence', () => {
+    it('loads saved state from localStorage', () => {
+      localStorage.setItem('geo_pipeline_state', JSON.stringify({
+        _ts: Date.now(),
         currentStep: 'geo_workshop',
         originalText: 'saved text',
         currentSandtableType: 'smart_city',
@@ -312,17 +313,35 @@ describe('Geo Store', () => {
       expect(newStore.currentStep).toBe('geo_workshop')
       expect(newStore.originalText).toBe('saved text')
       expect(newStore.currentSandtableType).toBe('smart_city')
+      // cleanup
+      localStorage.removeItem('geo_pipeline_state')
     })
 
-    it('handles corrupted sessionStorage gracefully', () => {
-      sessionStorage.setItem('geo_pipeline_state', 'not valid json{{{')
+    it('handles corrupted localStorage gracefully', () => {
+      localStorage.setItem('geo_pipeline_state', 'not valid json{{{')
       // Should not throw when loading
       expect(() => useGeoStore()).not.toThrow()
+      localStorage.removeItem('geo_pipeline_state')
     })
 
-    it('handles missing sessionStorage gracefully', () => {
-      sessionStorage.removeItem('geo_pipeline_state')
+    it('handles missing localStorage gracefully', () => {
+      localStorage.removeItem('geo_pipeline_state')
       expect(() => useGeoStore()).not.toThrow()
+    })
+
+    it('handles expired (7d+) localStorage gracefully', () => {
+      localStorage.setItem('geo_pipeline_state', JSON.stringify({
+        _ts: Date.now() - 8 * 24 * 60 * 60 * 1000,  // 8 days ago
+        currentStep: 'expired_state',
+        originalText: 'should be cleared',
+      }))
+      const freshPinia = createPinia()
+      setActivePinia(freshPinia)
+      const newStore = useGeoStore()
+      // Expired state should be treated as empty
+      expect(newStore.currentStep).toBe('import')
+      expect(newStore.originalText).toBe('')
+      localStorage.removeItem('geo_pipeline_state')
     })
   })
 })

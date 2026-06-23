@@ -13,6 +13,7 @@ class SandtableType(str, Enum):
     MILITARY_TERRAIN = "military_terrain"     # 军事地形沙盘
     DIGITAL_MULTIMEDIA = "digital_multimedia"  # 数字多媒体沙盘
     REAL_ESTATE = "real_estate"               # 地产/规划/展厅沙盘
+    GENERAL = "general"                       # 通用沙盘（兜底类型，覆盖8类之外的沙盘咨询）
 
     @property
     def label(self) -> str:
@@ -25,12 +26,13 @@ class SandtableType(str, Enum):
             "military_terrain": "军事地形沙盘",
             "digital_multimedia": "数字多媒体沙盘",
             "real_estate": "地产/规划/展厅沙盘",
+            "general": "通用沙盘",
         }
         return labels[self.value]
 
     @property
     def category(self) -> str:
-        """业务大类：智慧行业 / 军事 / 数字媒体 / 地产"""
+        """业务大类：智慧行业 / 军事 / 数字媒体 / 地产 / 通用"""
         cat = {
             "smart_traffic": "smart_industry_group",
             "smart_city": "smart_industry_group",
@@ -40,6 +42,7 @@ class SandtableType(str, Enum):
             "military_terrain": "military",
             "digital_multimedia": "digital_media",
             "real_estate": "real_estate",
+            "general": "general",
         }
         return cat[self.value]
 
@@ -122,6 +125,8 @@ class EvalDimension(str, Enum):
     DIFFERENTIATION = "differentiation"        # 差异化程度
     SOURCE_CONSISTENCY = "source_consistency"  # 信源一致性
     EEAT_SCORE = "eeat_score"                # E-E-A-T权威度
+    SEMANTIC_ALIGNMENT = "semantic_alignment"    # 语义对齐度（AI原生维度）
+    RAG_RETRIEVABILITY = "rag_retrievability"    # RAG可检索性（AI原生维度）
 
 
 class ContentFormat(str, Enum):
@@ -155,6 +160,8 @@ class EvalPhase(str, Enum):
     DIFFERENTIATION = "differentiation"
     EEAT_CHECK = "eeat_check"
     SOURCE_CHECK = "source_check"
+    SEMANTIC_ALIGNMENT = "semantic_alignment"    # 语义对齐度（向量计算，在solution_match之后）
+    RAG_RETRIEVABILITY = "rag_retrievability"    # RAG可检索性（向量+切片，在real_citation之后）
     COMPREHENSIVE = "comprehensive"
 
     @property
@@ -163,8 +170,10 @@ class EvalPhase(str, Enum):
             "generating_questions": "生成评测问题",
             "brand_recall": "品牌召回率",
             "solution_match": "方案匹配度",
+            "semantic_alignment": "语义对齐度",
             "advantage_citation": "优势采信率",
             "real_citation": "真实采信率",
+            "rag_retrievability": "RAG可检索性",
             "structure_quality": "结构化程度",
             "differentiation": "差异化程度",
             "eeat_check": "E-E-A-T权威度",
@@ -180,13 +189,15 @@ class EvalPhase(str, Enum):
             "generating_questions": 0,
             "brand_recall": 1,
             "solution_match": 2,
-            "advantage_citation": 3,
-            "real_citation": 4,
-            "structure_quality": 5,
-            "differentiation": 6,
-            "eeat_check": 7,
-            "source_check": 8,
-            "comprehensive": 9,
+            "semantic_alignment": 3,
+            "advantage_citation": 4,
+            "real_citation": 5,
+            "rag_retrievability": 6,
+            "structure_quality": 7,
+            "differentiation": 8,
+            "eeat_check": 9,
+            "source_check": 10,
+            "comprehensive": 11,
         }
         return order_map[self.value]
 
@@ -274,5 +285,91 @@ class UTMMedium(str, Enum):
             "social": "社交媒体",
             "email": "邮件营销",
             "cpc": "付费点击",
+        }
+        return labels[self.value]
+
+
+# ── 品牌舆情管理 ──
+
+class SentimentPolarity(str, Enum):
+    """情感极性"""
+    POSITIVE = "positive"
+    NEUTRAL = "neutral"
+    NEGATIVE = "negative"
+
+    @property
+    def label(self) -> str:
+        labels = {
+            "positive": "正面",
+            "neutral": "中性",
+            "negative": "负面",
+        }
+        return labels[self.value]
+
+
+class FactualAccuracy(str, Enum):
+    """事实准确性"""
+    ACCURATE = "accurate"
+    PARTIALLY_ACCURATE = "partially_accurate"
+    INACCURATE = "inaccurate"
+    UNVERIFIABLE = "unverifiable"
+
+    @property
+    def label(self) -> str:
+        labels = {
+            "accurate": "准确",
+            "partially_accurate": "部分准确",
+            "inaccurate": "不准确",
+            "unverifiable": "无法核实",
+        }
+        return labels[self.value]
+
+
+class IncidentStatus(str, Enum):
+    """舆情事件状态"""
+    OPEN = "open"
+    INVESTIGATING = "investigating"
+    RESPONDING = "responding"
+    RESOLVED = "resolved"
+    DISMISSED = "dismissed"
+
+    @property
+    def label(self) -> str:
+        labels = {
+            "open": "待处理",
+            "investigating": "调查中",
+            "responding": "响应中",
+            "resolved": "已解决",
+            "dismissed": "已忽略",
+        }
+        return labels[self.value]
+
+    @property
+    def next_states(self) -> list[str]:
+        """允许的状态流转"""
+        transitions = {
+            "open": ["investigating", "dismissed"],
+            "investigating": ["responding", "dismissed"],
+            "responding": ["resolved", "dismissed"],
+            "resolved": [],
+            "dismissed": ["open"],
+        }
+        return transitions.get(self.value, [])
+
+
+class IncidentSeverity(str, Enum):
+    """舆情事件严重度"""
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+    @property
+    def label(self) -> str:
+        labels = {
+            "critical": "严重",
+            "high": "高",
+            "medium": "中",
+            "low": "低",
         }
         return labels[self.value]

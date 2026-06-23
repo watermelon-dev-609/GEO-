@@ -23,11 +23,14 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
+import { useGeoStore } from '../stores/geo'
 import { ElMessage } from 'element-plus'
 import { authLogin } from '../api'
 
 const router = useRouter()
+const route = useRoute()
+const store = useGeoStore()
 const password = ref('')
 const loading = ref(false)
 const error = ref('')
@@ -39,7 +42,14 @@ async function handleLogin() {
   try {
     const res = await authLogin({ password: password.value })
     if (res.data.token) {
-      sessionStorage.setItem('auth_token', res.data.token)
+      store.setAuthToken(res.data.token)
+      store.setAuthEnabled(true)
+      // 登录后跳回原目标页面，或默认到工作台
+      const redirect = route.query.redirect || '/dashboard'
+      router.replace(redirect)
+    } else if (res.data.auth_enabled === false) {
+      // 服务端未启用鉴权，直接放行
+      store.setAuthEnabled(false)
       router.replace('/dashboard')
     }
   } catch (e) {

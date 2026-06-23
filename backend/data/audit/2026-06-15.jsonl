@@ -1,0 +1,12 @@
+{"timestamp": "2026-06-15 20:51:29", "method": "GET", "path": "/api/reputation/incidents", "client_ip": "testclient", "status": 200, "duration_ms": 58.79}
+{"timestamp": "2026-06-15 20:51:29", "method": "GET", "path": "/api/reputation/incidents", "client_ip": "testclient", "status": 200, "duration_ms": 53.9}
+{"timestamp": "2026-06-15 20:51:29", "method": "GET", "path": "/api/reputation/incidents/inc_nonexistent", "client_ip": "testclient", "status": 404, "duration_ms": 1.35}
+{"timestamp": "2026-06-15 20:51:29", "method": "PUT", "path": "/api/reputation/incidents/inc_nonexistent/status", "client_ip": "testclient", "status": 400, "duration_ms": 2.31}
+{"timestamp": "2026-06-15 20:51:29", "method": "POST", "path": "/api/reputation/classify", "client_ip": "testclient", "status": 200, "duration_ms": 39.3}
+{"timestamp": "2026-06-15 20:51:29", "method": "POST", "path": "/api/reputation/classify", "client_ip": "testclient", "status": 200, "duration_ms": 38.15}
+{"timestamp": "2026-06-15 20:51:29", "method": "POST", "path": "/api/reputation/classify", "client_ip": "testclient", "status": 422, "duration_ms": 2.23}
+{"timestamp": "2026-06-15 20:51:29", "method": "GET", "path": "/api/reputation/stats", "client_ip": "testclient", "status": 0, "duration_ms": 32.87}
+{"timestamp": "2026-06-15 20:51:31", "method": "GET", "path": "/api/reputation/sentiment-trend", "client_ip": "testclient", "status": 200, "duration_ms": 40.38}
+{"timestamp": "2026-06-15 20:51:31", "method": "POST", "path": "/api/reputation/scan", "client_ip": "testclient", "status": 200, "duration_ms": 63.05}
+{"timestamp": "2026-06-15 21:27:14", "method": "POST", "path": "/api/reputation/classify", "client_ip": "testclient", "status": 422, "duration_ms": 4.05}
+{"timestamp": "2026-06-15 21:27:14", "method": "GET", "path": "/api/reputation/stats", "client_ip": "testclient", "status": 0, "duration_ms": 24.18}

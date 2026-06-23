@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from app.models.schemas import (
     BrandMonitorCheckRequest, BrandMonitorCheckAllRequest,
@@ -88,11 +89,23 @@ def _build_overview() -> dict:
 
     recent_results = sessions[0].get("results", [])[:10] if sessions else []
 
+    # ── 情感汇总 ──
+    sentiment_summary = {"positive": 0, "neutral": 0, "negative": 0, "total": 0}
+    for s in sessions:
+        for r in s.get("results", []):
+            sent = r.get("sentiment", {})
+            if sent:
+                sentiment_summary["total"] += 1
+                pol = sent.get("polarity", "neutral")
+                if pol in sentiment_summary:
+                    sentiment_summary[pol] += 1
+
     return {
         "last_check_at": last_check, "total_sessions": total_sessions,
         "total_checks": total_checks, "total_mentioned": total_mentioned,
         "overall_mention_rate": overall_rate, "by_platform": by_platform,
         "recent_results": recent_results,
+        "sentiment_summary": sentiment_summary,
     }
 
 
@@ -146,6 +159,24 @@ async def run_check_all(req: BrandMonitorCheckAllRequest):
         max_per_category=req.max_queries_per_category,
         sandtable_type=req.sandtable_type,
     )
+
+    # ── 附加情感标签（轻量规则模式，不阻塞检测主流程） ──
+    try:
+        from app.core.sentiment_classifier import SentimentClassifier
+        classifier = SentimentClassifier()
+        for r in session.get("results", []):
+            response_text = r.get("full_response") or r.get("mention_context", "")
+            if response_text and r.get("brand_mentioned"):
+                r["sentiment"] = classifier.classify_sync(response_text, r.get("query", ""))
+            else:
+                r["sentiment"] = {
+                    "polarity": "neutral", "confidence": 0,
+                    "factual_accuracy": "unverifiable", "factual_issues": [],
+                    "summary": "品牌未被提及", "method": "skip",
+                }
+    except Exception as e:
+        logger.warning(f"情感标签附加失败: {e}")
+
     return session
 
 
@@ -229,3 +260,76 @@ async def delete_custom_query(query_id: str):
         raise HTTPException(status_code=404, detail="查询不存在")
     _save_custom_queries(custom)
     return {"status": "ok"}
+
+
+# ── 真实AI收录搜索（通过AI平台API实际检索品牌）──
+
+class RealSearchRequest(BaseModel):
+    sandtable_type: str = "general"
+    platforms: list[str] = ["deepseek"]
+    custom_queries: list[str] = []
+    brand_name: str = ""
+
+@router.post("/real-search")
+async def real_search(req: RealSearchRequest):
+    """在真实AI平台上搜索品牌收录状态
+
+    与普通品牌监测不同：此接口实际调用各AI平台API发起搜索查询，
+    解析返回结果中是否包含目标品牌，而非LLM模拟评估。
+    """
+    from app.core.real_search import RealSearchEngine
+
+    sandtable_type = req.sandtable_type
+    platforms = req.platforms
+    custom_queries = req.custom_queries
+    brand_name = req.brand_name
+
+    if not platforms:
+        raise HTTPException(status_code=400, detail="至少选择一个AI平台")
+
+    queries = RealSearchEngine.get_preset_queries(sandtable_type, custom_queries)
+    if not queries:
+        raise HTTPException(status_code=400, detail=f"没有找到沙盘类型 {sandtable_type} 的搜索查询")
+
+    try:
+        engine = RealSearchEngine()
+        result = await engine.search(
+            queries=queries,
+            platforms=platforms,
+            brand_name=brand_name,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"真实搜索失败: {str(e)}")
+
+
+@router.get("/real-search/history")
+async def real_search_history(days: int = 30):
+    """获取真实搜索历史记录"""
+    history_dir = DATA_DIR / "real_search"
+    if not history_dir.exists():
+        return {"searches": [], "total": 0}
+
+    cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
+    searches = []
+    for f in sorted(history_dir.glob("rs_*.json"), reverse=True):
+        try:
+            stat = f.stat()
+            if stat.st_mtime < cutoff:
+                continue
+            with open(f, "r", encoding="utf-8") as fp:
+                data = json.load(fp)
+            searches.append({
+                "search_id": data.get("search_id"),
+                "timestamp": data.get("timestamp"),
+                "mention_rate": data.get("mention_rate"),
+                "citation_rate": data.get("citation_rate"),
+                "total_platforms": data.get("total_platforms"),
+                "total_queries": data.get("total_queries"),
+            })
+        except Exception:
+            continue
+        if len(searches) >= 50:
+            break
+
+    return {"searches": searches, "total": len(searches)}

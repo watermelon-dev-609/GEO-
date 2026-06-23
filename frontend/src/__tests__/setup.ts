@@ -98,6 +98,19 @@ if (typeof global.scrollTo === 'undefined') {
   global.scrollTo = vi.fn() as unknown as typeof global.scrollTo
 }
 
+// localStorage — jsdom may not provide it; polyfill with a simple in-memory store
+if (typeof global.localStorage === 'undefined') {
+  const _store = new Map<string, string>()
+  global.localStorage = {
+    getItem: (key: string) => _store.get(key) ?? null,
+    setItem: (key: string, value: string) => { _store.set(key, value) },
+    removeItem: (key: string) => { _store.delete(key) },
+    clear: () => { _store.clear() },
+    get length() { return _store.size },
+    key: (index: number) => [..._store.keys()][index] ?? null,
+  } as typeof localStorage
+}
+
 // =============================================================================
 // Mock Element Plus message/message-box/notification — avoid actual DOM popups
 // =============================================================================
